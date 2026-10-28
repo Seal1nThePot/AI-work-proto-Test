@@ -60,7 +60,8 @@ test\
       src\                     已切出的分段脚本（顺序即依赖）：
                                 00-const / 01-state / 02-dom / 03-api / 10-geo / 11-layout / 12-chain /
                                 13-group / 20-render / 21-render-diff / 30-select /
-                                40-panel-node … 45-cycle（右栏面板 6 个）/ 50-form-task 51-form-node 52-form-edge 60-write
+                                40-panel-node … 45-cycle（右栏面板 6 个）/ 50-form-task 51-form-node 52-form-edge 60-write /
+                                70-drag 71-pointer（手势，最危险的一层）
   verify\
     run-acceptance.ps1         接口验收（160 项）
     run-ui-smoke.ps1           页面验收（192 项）+ ui-smoke.mjs（DOM 桩）
