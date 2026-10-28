@@ -1,4 +1,4 @@
-# WorkProto · 阶段五「最小可行性验证」
+# WorkProto · SkyOps 阶段五「最小可行性验证」
 
 > 版本：**0.4.0**（2026-10-28，拆分前基线）· 仓库：<https://github.com/Seal1nThePot/AI-work-proto-Test>
 
