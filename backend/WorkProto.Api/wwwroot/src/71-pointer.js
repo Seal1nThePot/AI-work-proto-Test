@@ -149,10 +149,14 @@ async function onSvgPointerUp(ev) {
   }
 }
 
+// 中键平移
+
 function startPan(ev) {
   state.pan = { x: ev.clientX, y: ev.clientY, tx: state.viewport.tx, ty: state.viewport.ty };
   if (ev.preventDefault) ev.preventDefault();
 }
+
+// 框选
 
 function startMarquee(ev) {
   const pt = svgPoint(ev);
@@ -197,6 +201,8 @@ function endMarquee() {
   paintSelection();
   showToast(hits.length ? `框选了 ${hits.length} 个节点，可以一起拖` : "框里没有节点", hits.length > 0);
 }
+
+/** 落点优先取指针正下方的端口，否则取纵向最近的那个口。 */
 
 function nearestPortIndex(nodeId, side, ev) {
   const p = state.positions.get(nodeId);

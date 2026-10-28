@@ -55,6 +55,8 @@ function renderChainPanel(chainId) {
   if (sBtn) sBtn.onclick = () => { setSelection(members.map((n) => n.id)); paintSelection(); };
 }
 
+/** 收起/摊开一条同向链：纯前端看法，改的是内存里的集合，接口一个都不调。 */
+
 function collapseChain(chainId, collapsed) {
   const ch = chainById(chainId);
   if (!ch) return { ok: false, status: 0, body: { error: "chain-not-found" } };
@@ -70,6 +72,8 @@ function toggleChain(chainId) {
   const ch = chainById(chainId);
   return collapseChain(chainId, !(ch && chainIsCollapsed(ch)));
 }
+
+/** 右键「同向链收成一块」：给链上任意一节，收它所在的那一条。 */
 
 function collapseChainOfNode(nodeId) {
   const walk = walkChainLocal(nodeId);

@@ -46,6 +46,8 @@ function layout(graph) {
   return pos;
 }
 
+/** 组的先后：按跨组的 transfer 边做拓扑排序（环就按 seq 接在后面），未分组节点当最后一列。 */
+
 function groupOrder(graph) {
   const ids = (graph.nodeGroups || []).map((g) => g.id);
   const hasLoose = graph.nodes.some((n) => !n.groupId);
@@ -83,6 +85,12 @@ function groupOrder(graph) {
   for (const i of ids.filter((x) => !order.includes(x)).sort(bySeq)) order.push(i);   // 组间有环：剩下的按 seq 接在后面
   return order;
 }
+
+/**
+ * 自动整理：一列一列按组的先后摆块，块内按依赖深度从左到右、由上到下。
+ * 只算坐标（不碰任何语义），算完照常走 POST /tasks/{id}/layout 落库。
+ * 目标宽度 SHELF_W：摆满就换行，免得 8 个组排成一条望不到头的长龙。
+ */
 
 const LOOSE_KEY = "__loose__";
 
@@ -176,6 +184,12 @@ function groupLayered(list, edges) {
   };
 }
 
+/**
+ * 自动整理：整张图只有一条「前后」主线——组按跨组依赖排出先后，一组一块、从左往右依次挨着放；
+ * 组内同样从左往右（依赖分层），一条流走到底不折行。
+ * 只算坐标，不碰任何语义；算完照常走 POST /tasks/{id}/layout 落库。
+ */
+
 function arrangePositions(graph) {
   const order = groupOrder(graph);
   const buckets = new Map(order.map((k) => [k, []]));
@@ -204,6 +218,8 @@ function arrangePositions(graph) {
   return pos;
 }
 
+/** 一键按组重排：先本地生效（图与渲染缓存同写，避免回弹），再落库。 */
+
 async function arrangeByGroups() {
   const g = state.graph;
   if (!g || !g.nodes.length) return;
@@ -225,6 +241,8 @@ async function arrangeByGroups() {
   });
   showToast(r.ok ? `已按组重排 ${payload.nodes.length} 个节点` : `整理后的坐标没存上：${r.body?.error || r.status}`, r.ok);
 }
+
+/** 总览：所有组收成牌、牌子按组的先后排成整齐的格子（组间线收拢成一条并标 ×N），再点一次全摊开。 */
 
 async function toggleOverview() {
   const g = state.graph;

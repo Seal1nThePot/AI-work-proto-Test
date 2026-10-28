@@ -36,12 +36,17 @@ function groupMembers(groupId) {
   return (state.graph?.nodes || []).filter((n) => n.groupId === groupId);
 }
 
+/** 收纳后的组显示成一块「牌」：成员节点全部藏起来，用这块牌代替（位置取成员包围盒左上角）。 */
+/** 一个组在画布上的占位：收成牌就是牌，摊开就是组框。束线两头都落在它上面。 */
+
 function groupBoxOf(gid) {
   const pill = state.pills?.get(gid);
   if (pill) return { x1: pill.x, y1: pill.y, x2: pill.x + pill.w, y2: pill.y + pill.h };
   const b = groupBounds(gid);
   return b ? { x1: b.x1, y1: b.y1, x2: b.x2, y2: b.y2 } : null;
 }
+
+/** 一个组的进度快照：总览/组标签上要一眼看出这个组到哪了、有没有卡住。 */
 
 function groupStats(groupId) {
   const members = groupMembers(groupId);
@@ -54,6 +59,8 @@ function groupStats(groupId) {
   const color = blocked ? "#dc2626" : doing ? "#2563eb" : done === members.length && members.length ? "#16a34a" : "#94a3b8";
   return { count: members.length, done, doing, blocked, color };
 }
+
+/** 总览模式：牌子按组的先后排成整齐的格子，不再各自站在成员包围盒的左上角（那样牌会散到天边）。 */
 
 const OV = { cols: 8, w: 268, h: 78, gx: 66, gy: 62, x0: 90, y0: 180 };   // 总览也是一条前后线：一行放得下就一行
 
@@ -111,6 +118,8 @@ function pillRect(groupId) {
   };
 }
 
+/** 藏起来的节点：属于已收纳的组、或属于已收起的同向链。 */
+
 function hiddenNodeIds() {
   const out = new Set();
   const collapsed = collapsedGroupIds();
@@ -152,6 +161,8 @@ function redrawGroupBox(groupId) {
   }
   if (chip && chip.setAttribute) chip.setAttribute("transform", `translate(${b.x1 + 10},${b.y1 - 12})`);
 }
+
+/** 拖动时把「这个节点牵动的框」全刷一遍：循环区 + 它所在的节点组 + 它所在的那条链块。 */
 
 function redrawBoxesFor(ids) {
   const groupIds = new Set();

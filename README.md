@@ -29,7 +29,7 @@ run-proto.cmd                          # 起服务并打开 http://127.0.0.1:508
 pwsh -File verify\seed-demo.ps1        # 灌三个 demo 任务（服务没起会自动起）
 node verify\seed-complex.mjs           # 造一个 150 节点 / 233 连线的复杂任务（见第五节）
 pwsh -File verify\run-acceptance.ps1   # 接口验收：自起 5082 + 临时库，跑完自清
-pwsh -File verify\run-ui-smoke.ps1     # 页面验收：自起 5083 + 临时库，DOM 桩跑真 app.js
+pwsh -File verify\run-ui-smoke.ps1     # 页面验收：自起 5083 + 临时库，DOM 桩跑真页面脚本（按 index.html 顺序拼接）
 pwsh -File verify\run-perf.ps1         # 服务端往返延迟对照表（不参与验收）
 node verify\run-canvas-bench.mjs       # 无头 Chrome 量一次渲染成本并截图（不参与验收）
 stop-proto.cmd                         # 停 5081
@@ -56,12 +56,12 @@ test\
                                Read / NodeWrite / Group / Edge / Template / Task / ApiResult / Reasons /
                                Contracts / Rows（逐文件职责见 backend\WorkProto.Api\索引.md）
     索引.md                     每个文件夹一份，由 tools/gen-index.mjs 从文件头生成，勿手改
-    wwwroot\                   index.html（脚本装配单）+ app.js（手写 SVG 画布）+ style.css
+    wwwroot\                   index.html（脚本装配单）+ style.css（无 app.js：逻辑全在 src\）
       src\                     已切出的分段脚本（顺序即依赖）：
                                 00-const / 01-state / 02-dom / 03-api / 10-geo / 11-layout / 12-chain /
                                 13-group / 20-render / 21-render-diff / 30-select /
                                 40-panel-node … 45-cycle（右栏面板 6 个）/ 50-form-task 51-form-node 52-form-edge 60-write /
-                                70-drag 71-pointer（手势，最危险的一层）
+                                70-drag 71-pointer（手势）/ 80-menu 81-keyboard 90-bind 99-boot（装配）
   verify\
     run-acceptance.ps1         接口验收（160 项）
     run-ui-smoke.ps1           页面验收（192 项）+ ui-smoke.mjs（DOM 桩）

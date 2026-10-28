@@ -97,6 +97,8 @@ async function applyGroupTemplate(templateId) {
   return r;
 }
 
+/** 把一个节点存成预设（右键节点菜单）。 */
+
 async function saveNodeTemplate(nodeId, name) {
   const n = state.nodesById.get(nodeId);
   const r = await api("/api/templates/nodes", {
@@ -108,6 +110,8 @@ async function saveNodeTemplate(nodeId, name) {
   else showToast(`${r.body?.error || r.status}：${r.body?.message || "存预设失败"}`, false);
   return r;
 }
+
+/** 把一个组存成预设（组面板/组菜单）。 */
 
 async function saveGroupTemplate(groupId, name) {
   const r = await api("/api/templates/groups", {

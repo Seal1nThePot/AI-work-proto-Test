@@ -4,6 +4,8 @@
 // 依赖: 01-state.js 02-dom.js 03-api.js 12-chain.js 13-group.js
 // 被依赖: 20-render.js 42-panel-group.js 与 app.js
 
+/** 选中节点后改属性：标题 / 一行目标 / 类型 / 循环区。 */
+
 async function saveNodeProps(nodeId) {
   const payload = {
     title: $("nTitle") ? $("nTitle").value : undefined,
@@ -36,6 +38,8 @@ async function saveNodeProps(nodeId) {
   return r;
 }
 
+/** 删节点（守卫在后端：只删未起步且无连线的 pending）。 */
+
 async function deleteNode(nodeId) {
   const n = state.nodesById.get(nodeId);
   const r = await api(`/api/nodes/${encodeURIComponent(nodeId)}`, { method: "DELETE" });
@@ -48,6 +52,8 @@ async function deleteNode(nodeId) {
   }
   return r;
 }
+
+/** 单个节点收纳：0 完整 / 1 仅标题 / 2 仅关键字（纯看图状态）。 */
 
 async function setNodeCompact(nodeId, level) {
   const r = await api(`/api/nodes/${encodeURIComponent(nodeId)}/compact`, {
@@ -63,6 +69,8 @@ async function setNodeCompact(nodeId, level) {
   }
   return r;
 }
+
+/** 把选中的几个节点圈成一个节点组（纯视觉，不影响门与执行）。 */
 
 async function createNodeGroup(ids, title) {
   if (!state.taskId) return { ok: false, status: 0, body: { error: "no-task" } };
@@ -80,6 +88,8 @@ async function createNodeGroup(ids, title) {
   }
   return r;
 }
+
+/** 删节点组：withNodes=false 只解散（节点全留）；true 连节点一起删（组里有一个删不起就整批不动）。 */
 
 async function deleteNodeGroup(groupId, withNodes) {
   const title = groupTitle(groupId);

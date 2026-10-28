@@ -1,4 +1,4 @@
-// 页面逻辑冒烟：用极简 DOM 桩在 Node 里跑 app.js 的交互链路（不渲染、不比像素）。
+// 页面逻辑冒烟：用极简 DOM 桩在 Node 里跑真实页面脚本（按 index.html 的 <script src> 顺序拼接）的交互链路（不渲染、不比像素）。
 // 覆盖：拖动落坐标 / 双击空白建节点 / 右键长按连线 / 新建任务 / 表单路径 / 各类拒绝。
 // 由 verify\run-ui-smoke.ps1 起临时库服务后调用。
 const BASE = process.env.PROTO_BASE || 'http://127.0.0.1:5083';

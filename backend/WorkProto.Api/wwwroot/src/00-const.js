@@ -4,6 +4,8 @@
 // 依赖: 无
 // 被依赖: 01/02/03 与 app.js 全部下游脚本
 
+// WorkProto 画布：状态可视化 + 编辑（拖动/框选/缩放/新建任务/双击建节点/连线）。
+
 const STATUS_COLORS = {
   pending: "#6b7280",
   active: "#2563eb",

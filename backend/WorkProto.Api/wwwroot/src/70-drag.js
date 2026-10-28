@@ -23,6 +23,17 @@ function moveNodeTo(nodeId, x, y) {
   return true;
 }
 
+/**
+ * Shift 拖动的左右吸附：把被拖节点的**左缘**对齐到邻居左缘、**右缘**对齐到邻居右缘，
+ * 或者贴到邻居的右侧/左侧。同宽节点下「左对左」与「右对右」等价——真正的区别在贴靠那两条，
+ * 所以四种候选都算，取阈值（SNAP_PX）内最近的一条，其余远处的自然不命中。
+ */
+/**
+ * 一个轴上的吸附：左右（x）与前后/上下（y）各四种候选——
+ * 上/左缘对齐、下/右缘对齐、贴到它下方/右侧、贴到它上方/左侧。
+ * 取阈值（SNAP_PX）内最近的一条；两轴各算各的，所以能同时吸成一列又一行。
+ */
+
 function snapAxis(raw, axis, excludeIds = []) {
   const skip = new Set(excludeIds);
   const horizontal = axis === "x";
@@ -59,6 +70,8 @@ function snapAxis(raw, axis, excludeIds = []) {
   return { value: best.v, guide: { axis, at: best.at, from: lo - 28, to: hi + 28, tip: best.tip } };
 }
 
+/** 兼容老名字：只管左右那一轴。 */
+
 function snapX(rawX, excludeIds = []) {
   const hit = snapAxis(rawX, "x", excludeIds);
   return hit ? { x: hit.value, guide: hit.guide } : null;
@@ -79,6 +92,8 @@ function ensureGuideEls(n) {
     state.alignTipEls.push(tip);
   }
 }
+
+/** 吸附参考线：左右吸画竖虚线、前后吸画横虚线，各带一句「上/下/左/右对齐 · 贴到哪边」。 */
 
 function drawAlignGuide(guides) {
   const list = (Array.isArray(guides) ? guides : (guides ? [guides] : [])).filter(Boolean);
@@ -106,6 +121,8 @@ function drawAlignGuide(guides) {
     if (tip && tip.textContent !== undefined) tip.textContent = gd.tip;
   });
 }
+
+/** 拖动核心：立刻改 transform（跟手），连线交给下一帧；按住 Shift 就左右 + 前后吸附。 */
 
 function applyDragFrame() {
   const d = state.drag;

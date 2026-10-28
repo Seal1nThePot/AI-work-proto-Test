@@ -23,6 +23,8 @@ async function saveNodePosition(nodeId, x, y) {
   return r;
 }
 
+/** 批量落坐标：框选一起拖时只发一次请求。 */
+
 async function saveLayout(ids) {
   if (!state.taskId || !ids.length) return { ok: true, body: null };
   const nodes = ids
@@ -81,6 +83,8 @@ async function connectNodes(fromId, toId, kind, fromPort = 0, toPort = 0) {
   return r;
 }
 
+/** 把本地临时画上去的那条线撤掉（服务端说不行时）。 */
+
 function removeEdgeLocally(edgeId) {
   if (!state.graph) return;
   state.graph.edges = state.graph.edges.filter((e) => e.id !== edgeId);
@@ -94,6 +98,11 @@ function removeEdgeLocally(edgeId) {
     }
   }
 }
+
+/**
+ * 本地插一条线：只往现有 DOM 里加「线 + 命中带」两个元素，不整图重绘。
+ * 节点上千时，建线后重取整图重绘要 0.5–1 秒，全卡在这一次重绘上。
+ */
 
 function insertEdgeLocally(edge, activated = []) {
   if (!edge || !state.graph) return;
@@ -129,9 +138,16 @@ function insertEdgeLocally(edge, activated = []) {
   syncGraphJson();
 }
 
+/**
+ * 本地改完图（拖坐标、插线、起步状态）之后，把「上次渲染的图」也同步成现在这样。
+ * 不做这一步，轮询会把「本地已经画好的变化」当成新变化，再来一次整图重绘。
+ */
+
 function syncGraphJson() {
   state.graphJson = state.graph ? JSON.stringify(state.graph) : null;
 }
+
+/** 静默校准：攒一下再拉一次图（JSON 没变就不会重绘；变了也只是补上状态差异）。 */
 
 function scheduleSilentSync(delay = 700) {
   if (state.silentTimer) clearTimeout(state.silentTimer);

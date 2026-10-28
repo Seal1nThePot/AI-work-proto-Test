@@ -89,11 +89,15 @@ function openNodeForm() {
   $("fTitle").focus();
 }
 
+/** 双击空白：把落点坐标交给节点表单（中心对齐到鼠标）。负坐标照收，画布没边。 */
+
 function requestNodeAt(x, y) {
   state.pendingPos = { x: Math.round(x - NODE_W / 2), y: Math.round(y - NODE_H / 2) };
   openNodeForm();
   return state.pendingPos;
 }
+
+/** 双击空白＝直接建一个默认节点（不弹表单），建完选中它、把右栏名字框聚焦好让人改。 */
 
 async function quickAddNode(worldX, worldY, title) {
   if (!state.taskId) {

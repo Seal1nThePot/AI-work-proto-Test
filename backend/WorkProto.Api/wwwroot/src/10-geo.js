@@ -4,6 +4,8 @@
 // 依赖: 00-const.js(几何常量) 01-state.js(view/viewport)
 // 被依赖: 11-layout 12-chain 13-group 20-render 60-write 70-drag 71-pointer 与 app.js
 
+/** 连线落在哪个区域：左进、右出、底部（回边）。count>1 时沿边等分。 */
+
 function portPoint(kind, p, index = 0, count = 1) {
   if (kind === "bottom") return { x: p.x + p.w / 2, y: p.y + p.h };
   const ratio = count <= 1 ? 0.5 : (index + 1) / (count + 1);
@@ -40,6 +42,8 @@ function captureView() {
   return state.view;
 }
 
+/** 屏幕坐标 → 画布世界坐标（含缩放与平移）。 */
+
 function svgPoint(ev) {
   const v = state.view || captureView();
   const vp = state.viewport;
@@ -47,6 +51,8 @@ function svgPoint(ev) {
   const uy = (ev.clientY - v.top) * v.sy;
   return { x: (ux - vp.tx) / vp.scale, y: (uy - vp.ty) / vp.scale };
 }
+
+/** 世界坐标 → 屏幕坐标（测试与锚点计算用）。 */
 
 function worldToScreen(pt) {
   const v = state.view || captureView();
@@ -68,6 +74,11 @@ function applyViewport() {
   if (note) note.textContent = `缩放 ${Math.round(vp.scale * 100)}%`;
 }
 
+/**
+ * 底纹跟着视口走：格子原点＝世界原点，平移缩放时格子一起动。
+ * 画布没有边缘上限，所以不能给一块固定大小的底纹——否则一平移就露馅。
+ */
+
 function applyGrid() {
   const svg = $("graph");
   if (!svg || !svg.style) return;
@@ -78,6 +89,8 @@ function applyGrid() {
   svg.style.backgroundSize = `${px}px ${px}px`;
   svg.style.backgroundPosition = `${vp.tx}px ${vp.ty}px`;
 }
+
+/** 滚轮缩放：锚在光标下的那个点，缩放前后它不动。 */
 
 function zoomAt(clientX, clientY, deltaY) {
   captureView();
@@ -95,6 +108,8 @@ function zoomAt(clientX, clientY, deltaY) {
   return { scale: vp.scale, tx: vp.tx, ty: vp.ty, anchor: before };
 }
 
+/** 把整张图塞进视口。收纳起来的组按那块牌算，别为看不见的节点缩得太小。 */
+
 function fitView() {
   const hidden = state.hiddenIds || new Set();
   const pts = [];
@@ -106,6 +121,8 @@ function fitView() {
   for (const r of (state.chainRects || new Map()).values()) pts.push(r);
   applyFit(pts);
 }
+
+/** 只框住一组节点（从总览点开一块牌时用）：不然一屏 150 个节点谁也看不清。 */
 
 function fitToNodes(ids) {
   const pts = ids.map((id) => state.positions.get(id)).filter(Boolean);

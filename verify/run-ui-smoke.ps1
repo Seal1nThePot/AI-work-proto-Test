@@ -1,4 +1,4 @@
-# 页面逻辑冒烟：临时库 + 独立端口起一个后端实例，用 Node 的 DOM 桩跑 app.js 的两个写操作链路。
+# 页面逻辑冒烟：临时库 + 独立端口起一个后端实例，用 Node 的 DOM 桩跑真实页面脚本（27 个 src 文件按 index.html 顺序拼接）的两个写操作链路。
 # 不碰 demo 库（data\proto.db），跑完删库。
 # 用法： pwsh -File verify\run-ui-smoke.ps1
 

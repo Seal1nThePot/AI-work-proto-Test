@@ -92,6 +92,8 @@ function renderGroupPanel(groupId) {
   if (aBtn) aBtn.onclick = () => deleteNodeGroup(groupId, true);
 }
 
+/** 收纳/展开一个组（纯看图状态，落库只为刷新后还是原样）。 */
+
 async function collapseGroup(groupId, collapsed) {
   const fromOverview = state.overview;
   const r = await api(`/api/node-groups/${encodeURIComponent(groupId)}/collapse`, {
@@ -111,10 +113,14 @@ async function collapseGroup(groupId, collapsed) {
   return r;
 }
 
+/** 双击标题：组在「收成一块牌 / 摊开」之间切换。 */
+
 function toggleGroupCollapsed(groupId) {
   const grp = (state.graph?.nodeGroups || []).find((x) => x.id === groupId);
   return collapseGroup(groupId, !(grp && grp.collapsed));
 }
+
+/** 双击标题：节点在「完整卡片 / 仅标题」之间切换（本来停在仅关键字就摊回完整）。 */
 
 async function toggleNodeCompact(nodeId, node) {
   const n = node || state.nodesById.get(nodeId);

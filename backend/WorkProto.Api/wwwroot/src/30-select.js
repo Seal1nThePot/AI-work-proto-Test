@@ -4,10 +4,14 @@
 // 依赖: 01-state.js 02-dom.js($)
 // 被依赖: 20-render.js app.js 71-pointer.js
 
+/** 当前选中状态的一句话指纹：用来判断「画布上画的是不是就是这个选中」。 */
+
 function selectionKey() {
   const ids = [...state.selectedIds].sort().join(",");
   return [state.selected || "", state.selectedEdge || "", state.selectedGroup || "", state.selectedChain || "", ids].join("|");
 }
+
+/** 焦点节点（含它所在的收纳组）：与它相连的线亮起来，其余压暗。 */
 
 function touchesFocus(id) {
   const focus = state.selected;
@@ -17,6 +21,8 @@ function touchesFocus(id) {
   if (!g || !state.collapsedIds || !state.collapsedIds.has(g)) return false;
   return ((state.nodesById.get(id) || {}).groupId || null) === g;
 }
+
+/** 节点卡片 / 连线的 class：渲染和「只上色不重绘」共用同一套，别写两份规则。 */
 
 function nodeClass(n) {
   return "node-box" + (n.compact ? " compact" : "") +

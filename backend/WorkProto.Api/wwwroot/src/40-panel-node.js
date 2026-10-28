@@ -17,6 +17,8 @@ function nodeOptions(selected) {
     .join("");
 }
 
+/** 选中节点后把右栏「标题」输入框聚焦（双击建节点之后就能直接改名）。 */
+
 function focusProps() {
   const el = $("nTitle");
   if (el && el.focus) el.focus();

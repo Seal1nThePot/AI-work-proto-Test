@@ -30,6 +30,8 @@ async function declareLoop(groupId) {
   return r;
 }
 
+/** 撤销循环：删掉回边与上限，组留着。 */
+
 async function undoLoop(groupId) {
   const r = await api(`/api/node-groups/${encodeURIComponent(groupId)}/loop`, { method: "DELETE" });
   if (r.ok) {
@@ -41,6 +43,8 @@ async function undoLoop(groupId) {
   }
   return r;
 }
+
+/** 调高轮次上限（只有 master/lead 能干）。 */
 
 async function raiseLoopLimit(groupId) {
   const cy = state.cycleByGroup.get(groupId);

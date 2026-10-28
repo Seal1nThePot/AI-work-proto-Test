@@ -12,6 +12,8 @@ function chainMembers(chain) {
   return ((chain && chain.nodeIds) || []).map((id) => state.nodesById.get(id)).filter(Boolean);
 }
 
+/** 链块画在链头的坐标上：比节点宽一点、同高，左右口照旧（端口号取进出边里最大的那个）。 */
+
 function chainRect(chain) {
   const head = state.positions.get(chain.headNodeId);
   if (!head) return null;
@@ -27,6 +29,8 @@ function chainRect(chain) {
   }
   return { x: head.x, y: head.y, w: CHAIN_W, h: CHAIN_H, inPorts, outPorts };
 }
+
+/** 摊开时的虚线框：把这条链的几个节点圈起来，让人知道「这条链现在在哪」。 */
 
 function chainFrameRect(chain) {
   const members = chainMembers(chain).map((n) => state.positions.get(n.id)).filter(Boolean);
@@ -49,6 +53,8 @@ function chainIdOf(headNodeId) {
   return `ch:${headNodeId}`;
 }
 
+/** 收起来了没：只认内存里那个集合（链头节点 id）。 */
+
 function chainIsCollapsed(chain) {
   return !!chain && state.collapsedChains.has(chain.headNodeId);
 }
@@ -56,6 +62,8 @@ function chainIsCollapsed(chain) {
 function chainById(chainId) {
   return (state.chains || []).find((x) => x.id === chainId) || null;
 }
+
+/** 进出边索引：算链只认 transfer 边（回边是另一回事），一次建好给整张图用。 */
 
 function chainIndex() {
   if (state.chainIndex) return state.chainIndex;
@@ -100,11 +108,15 @@ function walkChainFrom(nodeId, ins, outs) {
   return chain;
 }
 
+/** 给一个节点，返回它所在的那条同向链（可能只有它自己）。 */
+
 function walkChainLocal(nodeId) {
   if (!state.nodesById.has(nodeId)) return [];
   const { ins, outs } = chainIndex();
   return walkChainFrom(nodeId, ins, outs);
 }
+
+/** 全图所有同向链：每个链头出一条，成员 ≥2 才算链。 */
 
 function graphChains() {
   const { ins, outs } = chainIndex();
