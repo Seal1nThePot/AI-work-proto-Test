@@ -1,5 +1,7 @@
 # WorkProto · 阶段五「最小可行性验证」
 
+> 版本：**0.4.0**（2026-10-28，拆分前基线）· 仓库：<https://github.com/Seal1nThePot/AI-work-proto-Test>
+
 任务：`tsk_4c5221cf1e7a4a17a2302d3d4146d783` 阶段五（2026-10-28）
 性质：**独立原型**——自带 SQLite、不连不写 SkyOps 库、不改 SkyOps 代码与页面。数据是原型数据，**不用于判断真实任务完成**。
 
