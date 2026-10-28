@@ -19,15 +19,29 @@
 ```
 backend\WorkProto.Api\
   ProtoDb.cs       库路径解析、连接与 PRAGMA、整份 DDL（要核对表结构就看这个文件）、老库补列与搬家
-  ProtoStore.cs    全部业务：认领排队 / 放行（门判定与 Settle）/ 检查点 / 读 / 建图 / 图增量 / 删除
   Program.cs       端点表（一一对上 api.md 的表）
+  Proto.ApiResult.cs   统一返回体（Ok/Created/Fail）
+  Proto.Reasons.cs     拒因码常量表
+  Proto.Contracts.cs   请求体 record 全集
+  Proto.Rows.cs        四张表的行模型（NodeRow/EdgeRow/GroupRow/CycleRow）
+  Proto.Infra.cs       事务(AsyncLocal)/Q·Exec·Event/行映射/读节点读边读组
+  Proto.Gate.cs        门判定：缺哪条边、拒因、放行（写 released_at）
+  Proto.Propagate.cs   传播：激活后继 / 跳过未选 / 循环迭代
+  Proto.Lease.cs       认领与租约回收
+  Proto.Lifecycle.cs   开始/完成/返工/择一/跳过/检查点/提上限/解阻塞
+  Proto.Read.cs        读端点：列表、摘要、整图、单节点
+  Proto.NodeWrite.cs   建节点/改端口/改属性/移动 + 端口与类型白名单
+  Proto.Group.cs       节点组与循环区：建/收纳/展开/删、声明与撤销循环
+  Proto.Edge.cs        连线：建/读/改/删、人工门确认
+  Proto.Template.cs    模板库：节点/组模板增删查与应用
+  Proto.Task.cs        任务级：建图 / 删任务 / 删节点
   wwwroot\
     index.html     工具栏 + 画布容器 + 右栏面板的骨架
     app.js         画布全部逻辑：渲染、手势、选区、拖动、连线、面板、抽屉式收纳
     style.css      所有视觉与选择态（`.picked` / `.focus` / `.edge-focus` / `.edge-dim` 都在 CSS 里）
 ```
 
-分层原则：**业务判定只在 `ProtoStore.cs`**，页面不复制一份语义；页面只负责「看得见」与「发请求」。
+分层原则：**业务判定只在后端 `Proto.*.cs`**（15 个 `partial class Proto`，编译器眼里仍是一个类），页面不复制一份语义；页面只负责「看得见」与「发请求」。每个文件前四行写着 `用途/暴露/依赖/被依赖`，`索引.md` 由 `tools/gen-index.mjs` 生成。
 
 ## 三、数据层
 

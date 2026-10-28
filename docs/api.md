@@ -2,7 +2,7 @@
 
 入口：[README](../README.md) ｜ 架构：[architecture.md](architecture.md) ｜ 画布功能：[features.md](features.md) ｜ 验收：[acceptance.md](acceptance.md)
 
-端点表在 `Program.cs`，业务在 `ProtoStore.cs`；本文件是"调什么、什么情况下拒绝、拒绝码叫什么"的唯一正文。
+端点表在 `Program.cs`，业务按域分在 15 个 `Proto.*.cs`（`partial class Proto`，导航见 `backend\WorkProto.Api\索引.md`）；本文件是"调什么、什么情况下拒绝、拒绝码叫什么"的唯一正文。
 
 ## 一、动作与端点
 

@@ -1,3 +1,8 @@
+// ────────── ProtoDb.cs ──────────「库与 DDL」
+// 用途: 库路径解析、连接与 PRAGMA、整份 DDL、老库补列与搬家（核对表结构只看这个文件）
+// 暴露: ProtoDb.DbPath Open Schema
+// 依赖: 无
+// 被依赖: Proto.Infra.cs（全部 SQL 走这里拿连接）
 using Microsoft.Data.Sqlite;
 
 namespace WorkProto.Api;

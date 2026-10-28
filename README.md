@@ -51,8 +51,11 @@ test\
     acceptance.md              验收：160 + 192 项断言清单、性能证据、测不到的地方
   backend\WorkProto.Api\
     ProtoDb.cs                 库路径、连接与 PRAGMA、整份 DDL、老库补列与搬家
-    ProtoStore.cs              认领排队 / 放行 / 检查点 / 读 / 建图 / 图增量 / 删除
     Program.cs                 端点表
+    Proto.*.cs                 业务，15 个 partial 文件：Infra / Gate / Propagate / Lease / Lifecycle /
+                               Read / NodeWrite / Group / Edge / Template / Task / ApiResult / Reasons /
+                               Contracts / Rows（逐文件职责见 backend\WorkProto.Api\索引.md）
+    索引.md                     每个文件夹一份，由 tools/gen-index.mjs 从文件头生成，勿手改
     wwwroot\                   index.html + app.js（手写 SVG 画布）+ style.css
   verify\
     run-acceptance.ps1         接口验收（160 项）

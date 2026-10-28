@@ -1,3 +1,8 @@
+// ────────── Program.cs ──────────「端点表」
+// 用途: 40 个端点的接线与请求体绑定，一一对上 docs\api.md 的端点表
+// 暴露: 无（顶层语句）
+// 依赖: Proto.*.cs（15 个 partial 文件）
+// 被依赖: run-proto.cmd、verify 脚本
 using WorkProto.Api;
 
 // content root 钉在程序目录：直接 dotnet WorkProto.Api.dll 也能找到 wwwroot

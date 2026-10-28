@@ -26,24 +26,21 @@ const DIRS = [
   'tools',
 ];
 const SKIP = new Set(['索引.md', 'notes.md']);
+const SKIPDIR = new Set(['bin', 'obj', 'node_modules', '.vs', 'data', 'logs']);
 const CODE = /\.(cs|ts|js|mjs|ps1|cmd|html|css|json|csproj)$/i;
 const DOC = /\.md$/i;
 
-function walk(files) {
-  return files.filter((f) => {
-    if (SKIP.has(f)) return false;
-    if (f.startsWith('.')) return false;
-    const st = statSync(join(dir, f));
-    return st.isFile() && (CODE.test(f) || DOC.test(f));
-  });
+function walk(names) {
+  return names.filter((f) => !SKIP.has(f) && !f.startsWith('.') && (CODE.test(f) || DOC.test(f)));
 }
 
 let dir = '';
+const P = '(?:(?:\\/\\/|#|\\/\\*|--|<!--|rem\\b)\\s*)?';
 const FIELD = {
-  用途: /^\s*(?:\/\/|#|\/\*|--)?\s*用途\s*[:：]\s*(.+)$/,
-  暴露: /^\s*(?:\/\/|#|\/\*|--)?\s*暴露\s*[:：]\s*(.+)$/,
-  依赖: /^\s*(?:\/\/|#|\/\*|--)?\s*依赖\s*[:：]\s*(.+)$/,
-  被依赖: /^\s*(?:\/\/|#|\/\*|--)?\s*被依赖\s*[:：]\s*(.+)$/,
+  用途: new RegExp('^\\s*' + P + '用途\\s*[:：]\\s*(.+)$'),
+  暴露: new RegExp('^\\s*' + P + '暴露\\s*[:：]\\s*(.+)$'),
+  依赖: new RegExp('^\\s*' + P + '依赖\\s*[:：]\\s*(.+)$'),
+  被依赖: new RegExp('^\\s*' + P + '被依赖\\s*[:：]\\s*(.+)$'),
 };
 
 function parse(file) {
@@ -55,7 +52,7 @@ function parse(file) {
     for (const [k, re] of Object.entries(FIELD)) {
       if (out[k]) continue;
       const m = line.match(re);
-      if (m) out[k] = m[1].trim();
+      if (m) out[k] = m[1].replace(/\s*-->\s*$/, '').trim();
     }
   }
   if (!out.用途) {
@@ -82,8 +79,10 @@ let written = 0, stale = [];
 for (dir of DIRS) {
   const abs = join(ROOT, dir);
   if (!existsSync(abs)) continue;
-  const files = walk(readdirSync(abs)).sort(natural);
-  if (!files.length) continue;
+  const entries = readdirSync(abs, { withFileTypes: true });
+  const subdirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith('.') && !SKIPDIR.has(e.name)).map((e) => e.name).sort(natural);
+  const files = walk(entries.filter((e) => e.isFile()).map((e) => e.name)).sort(natural);
+  if (!files.length && !subdirs.length) continue;
 
   const rows = files.map((f) => ({ f, ...parse(f) }));
   const total = rows.reduce((s, r) => s + r.行数, 0);
@@ -93,8 +92,14 @@ for (dir of DIRS) {
   L.push('# ' + (dir === '.' ? '仓库根' : dir.replace(/\//g, '\\')) + ' · 索引');
   L.push('');
   L.push('> 由 `tools/gen-index.mjs` 生成，**勿手改**；改文件头注释后重跑。');
-  L.push('> 规模：' + rows.length + ' 个文件 / ' + total + ' 行。');
+  L.push('> 规模：' + rows.length + ' 个文件 / ' + total + ' 行' + (subdirs.length ? ' / ' + subdirs.length + ' 个子目录' : '') + '。');
   L.push('');
+  if (subdirs.length) {
+    L.push('## 子目录');
+    L.push('');
+    for (const d of subdirs) L.push('- [' + d + '/](' + encodeURI(d) + '/%E7%B4%A2%E5%BC%95.md)');
+    L.push('');
+  }
   if (isSrc) {
     L.push('## 分层（数字前缀即加载顺序）');
     L.push('');
@@ -109,6 +114,7 @@ for (dir of DIRS) {
     for (const [b, fs] of groups) L.push('| ' + b + ' | ' + fs.join(' · ') + ' |');
     L.push('');
   }
+  if (rows.length) {
   L.push('## 文件');
   L.push('');
   L.push('| 文件 | 行数 | 用途 | 暴露 | 依赖 |');
@@ -119,6 +125,7 @@ for (dir of DIRS) {
     L.push(line.length > 1 ? line : '');
   }
   L.push('');
+  }
   const edges = rows.filter((r) => r.依赖).map((r) => '- ' + r.f + ' → ' + r.依赖);
   if (edges.length) {
     L.push('## 依赖边');

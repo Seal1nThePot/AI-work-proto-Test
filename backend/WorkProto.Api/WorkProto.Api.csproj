@@ -1,3 +1,7 @@
+<!-- 用途: 单一 Web 项目：net10.0 + Microsoft.Data.Sqlite，wwwroot 随构建复制 -->
+<!-- 暴露: 无 -->
+<!-- 依赖: Microsoft.Data.Sqlite 10.0.12 -->
+<!-- 被依赖: run-proto.cmd / verify 脚本 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
@@ -5,9 +9,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>WorkProto.Api</RootNamespace>
-    <Version>0.4.0</Version>
-    <AssemblyVersion>0.4.0.0</AssemblyVersion>
-    <FileVersion>0.4.0.0</FileVersion>
+    <Version>0.4.1</Version>
+    <AssemblyVersion>0.4.1.0</AssemblyVersion>
+    <FileVersion>0.4.1.0</FileVersion>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
