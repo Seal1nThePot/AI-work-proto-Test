@@ -25,7 +25,12 @@
 ## 二、怎么跑
 
 ```
-run-proto.cmd                          # 起服务并打开 http://127.0.0.1:5081/
+启动点.bat                             # 一键：停旧进程 → 构建 → 起 5081 → 等健康 → 拉起浏览器新窗口
+启动点.bat chrome                      # 指定浏览器（edge / firefox 同理；默认 Edge，没装则 Chrome，再没有用系统默认）
+启动点.bat open                        # 服务已在跑，只把浏览器窗口拉起来
+启动点.bat check                       # 四条一起跑：build + 160 + 192 + 16 守恒
+启动点.bat stop                        # 停 5081
+run-proto.cmd                          # 旧的极简启动：只 build + 起服务，不拉浏览器、不停旧进程
 pwsh -File verify\seed-demo.ps1        # 灌三个 demo 任务（服务没起会自动起）
 node verify\seed-complex.mjs           # 造一个 150 节点 / 233 连线的复杂任务（见第五节）
 pwsh -File verify\run-acceptance.ps1   # 接口验收：自起 5082 + 临时库，跑完自清
@@ -33,9 +38,10 @@ pwsh -File verify\run-ui-smoke.ps1     # 页面验收：自起 5083 + 临时库�
 pwsh -File verify\run-split-check.ps1  # 拆分守恒检查（16 条：文件数/函数数/符号数/索引新鲜度）
 pwsh -File verify\run-perf.ps1         # 服务端往返延迟对照表（不参与验收）
 node verify\run-canvas-bench.mjs       # 无头 Chrome 量一次渲染成本并截图（不参与验收）
-stop-proto.cmd                         # 停 5081
+stop-proto.cmd                         # 停 5081（等价 启动点.bat stop）
 ```
 
+- 浏览器窗口由 `verify\wait-and-open.ps1` 拉起：它先轮询 `/api/health`（最多 40 秒），确认 200 才开窗，避免打开就是 `ERR_CONNECTION_REFUSED`
 - 服务：`http://127.0.0.1:5081/`（REST 与页面同一进程）
 - 库：`data\proto.db`（可删，删了重启即空库）
 - 环境变量：`PROTO_PORT`、`PROTO_DB`、`PROTO_AGENT`、`PROTO_SYNC`
@@ -45,6 +51,7 @@ stop-proto.cmd                         # 停 5081
 ```
 test\
   README.md                    本文件：入口、怎么跑、边界
+  启动点.bat                   一键入口：构建+起服务+拉浏览器窗口 / open / stop / check
   docs\                        四份分离文档（见第四节）
     architecture.md            架构：进程、代码地图、数据层与提交口径、前端渲染、性能
     api.md                     接口契约：端点、图增量规则、门与放行、拒因码、钉死的五处
@@ -68,6 +75,8 @@ test\
     run-ui-smoke.ps1           页面验收（192 项）+ ui-smoke.mjs（DOM 桩）
     run-perf.ps1               往返延迟对照（FULL vs NORMAL）
     run-canvas-bench.mjs       无头 Chrome 量渲染：DOM 计数 + render()/fitView() 耗时 + 截图
+    wait-and-open.ps1          等 /api/health 200 再拉起浏览器新窗口（启动点.bat 调它）
+    run-split-check.ps1        16 条拆分守恒检查
     seed-demo.ps1              样板链 / 回边循环 / 择一 100% 三个 demo 任务
     seed-complex.mjs           150 节点 / 233 连线的复杂任务（8 组 + 循环区 + 择一 + k_of_n + 人工门控）
   docs\screenshot-150-nodes.png  那张复杂图的样子（run-canvas-bench.mjs 拍的）
