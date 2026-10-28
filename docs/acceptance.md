@@ -9,6 +9,7 @@ pwsh -File verify\run-perf.ps1         # 服务端往返延迟对照表（FULL v
 pwsh -File verify\seed-demo.ps1        # 灌三个 demo 任务到 data\proto.db
 node verify\seed-complex.mjs           # 造 150 节点复杂任务 tsk-150-demo（结构走 REST、进度刷库）
 node verify\run-canvas-bench.mjs       # 无头 Chrome 量渲染成本 + 截图
+pwsh -File verify\run-split-check.ps1  # 拆分守恒检查（拆的是文件不是函数；红了说明搬丢了东西）
 ```
 
 设计任务不好靠肉眼截图验收，所以页面侧的办法是：**用极简 DOM 桩在 Node 里加载真的页面脚本**（`wwwroot\src\*.js` 按 `index.html` 的 `<script src>` 顺序拼接；0.4.8 起 `app.js` 已不存在）（`document.getElementById` 换成 Map 缓存的对象桩、`fetch` 前缀成临时库地址），直接调页面自己的函数走「按钮 → 表单 → 调接口 → 回显」整条链路。带手势的交互（拖动、双击、右键拖连）之所以可测，是因为手势层只做"取坐标 + 判定落点"，再调命名动作函数（`saveNodePosition` / `requestNodeAt` / `connectNodes` / `createTask`）——测动作函数即可，手势层只剩几行翻译代码。

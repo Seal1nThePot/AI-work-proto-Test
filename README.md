@@ -30,6 +30,7 @@ pwsh -File verify\seed-demo.ps1        # 灌三个 demo 任务（服务没起会
 node verify\seed-complex.mjs           # 造一个 150 节点 / 233 连线的复杂任务（见第五节）
 pwsh -File verify\run-acceptance.ps1   # 接口验收：自起 5082 + 临时库，跑完自清
 pwsh -File verify\run-ui-smoke.ps1     # 页面验收：自起 5083 + 临时库，DOM 桩跑真页面脚本（按 index.html 顺序拼接）
+pwsh -File verify\run-split-check.ps1  # 拆分守恒检查（16 条：文件数/函数数/符号数/索引新鲜度）
 pwsh -File verify\run-perf.ps1         # 服务端往返延迟对照表（不参与验收）
 node verify\run-canvas-bench.mjs       # 无头 Chrome 量一次渲染成本并截图（不参与验收）
 stop-proto.cmd                         # 停 5081
