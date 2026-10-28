@@ -1,0 +1,21 @@
+# 构建产物
+bin/
+obj/
+
+# 演示数据库（由 verify\seed-demo.ps1 / verify\seed-complex.mjs 重建）
+data/
+
+# 验收临时目录
+verify/.tmp/
+
+# 日志与编辑器
+*.log
+*.user
+.vs/
+
+# 误建的空目录（早期一条 curl 命令留下的）
+http127.0.0.15081/
+
+# 系统垃圾文件
+Thumbs.db
+.DS_Store

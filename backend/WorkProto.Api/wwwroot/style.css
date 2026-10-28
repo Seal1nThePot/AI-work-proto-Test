@@ -1,0 +1,402 @@
+:root {
+  --pending: #6b7280;
+  --active: #2563eb;
+  --review: #a855f7;
+  --approved: #16a34a;
+  --blocked: #dc2626;
+  --skipped: #94a3b8;
+  --ink: #0f172a;
+  --line: #cbd5e1;
+  --bg: #f8fafc;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 14px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.brand { font-weight: 700; }
+
+.banner {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  color: #92400e;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.tools { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+.tools select { min-width: 320px; padding: 4px 6px; }
+.tools button { padding: 4px 12px; cursor: pointer; }
+.auto { color: #475569; }
+.dbnote { color: #64748b; font-size: 12px; }
+
+main { display: flex; flex: 1; min-height: 0; }
+
+#graphPane { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; padding: 12px 16px 16px; }
+
+.summary { font-size: 13px; color: #334155; margin-bottom: 8px; }
+.summary b { font-size: 15px; }
+
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: #475569; margin-bottom: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+#graph {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: block;
+  background:
+    radial-gradient(circle at 1px 1px, #e2e8f0 1px, transparent 0) 0 0 / 24px 24px;
+  cursor: default;
+  touch-action: none;
+}
+#graph .node-box { cursor: grab; }
+#graph .node-box:active { cursor: grabbing; }
+#graph .node-box.picked rect.node-body { filter: drop-shadow(0 0 5px rgba(37, 99, 235, 0.5)); }
+/* 选中/焦点靠 class 上色：点选只改 class，不重建 DOM（节点上千也不卡） */
+#graph .node-box.picked > rect.node-body { stroke: #2563eb; stroke-width: 2.5; }
+#graph .node-box.focus > rect.node-body { stroke: #0f172a; stroke-width: 3; }
+#graph .group-pill.picked > rect:first-child { stroke: #1d4ed8; stroke-width: 3; }
+#graph .chain-box.picked > rect.chain-body { stroke: #1d4ed8; stroke-width: 3; }
+#graph .marquee {
+  fill: rgba(37, 99, 235, 0.12);
+  stroke: #2563eb;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+#graph .node-title { font-size: 13px; font-weight: 700; }
+#graph .node-goal { font-size: 11px; fill: #475569; }
+#graph .node-status { font-size: 11px; font-weight: 700; }
+/* 收纳后的窄卡片：只留一行标题或关键字 */
+#graph .compact-title { font-size: 12px; font-weight: 700; fill: #0f172a; }
+
+/* 点中节点后：相连的线亮起来，其余压暗 */
+#graph .edge, #graph .edge-dim, #graph .edge-focus { transition: opacity 0.12s ease; }
+#graph .edge-dim { opacity: 0.14; }
+#graph .edge-focus { stroke-width: 3; }
+/* 点中的那条线 */
+#graph .edge-selected { stroke-width: 3.4; }
+#graph .edge-hit { cursor: pointer; }
+/* 人工门控：没确认时橙色虚线，确认后恢复正常颜色并标 ✓ */
+#graph .edge-gate-label { font-size: 10px; fill: #ea580c; font-weight: 700; }
+
+.danger-btn {
+  border: 1px solid #fca5a5;
+  background: #fef2f2;
+  color: #b91c1c;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.danger-btn:hover { background: #fee2e2; }
+#graph .edge-label { font-size: 10px; fill: #64748b; }
+#graph .cycle-region { fill: none; stroke: #7c3aed; stroke-dasharray: 6 4; }
+#graph .cycle-label { font-size: 11px; fill: #7c3aed; font-weight: 600; }
+/* Shift 拖动的吸附参考线：一竖虚线 + 一句「左对齐/右对齐/贴到哪边」 */
+#graph .align-line { stroke: #f97316; stroke-width: 1; stroke-dasharray: 5 4; pointer-events: none; }
+#graph .align-tip { font-size: 10px; fill: #f97316; font-weight: 700; pointer-events: none; }
+#graph { user-select: none; }
+
+/* 接线区：左侧进线口 / 右侧出线口。一个圆自己吃事件（节点上千时省掉一半端口元素） */
+#graph .port {
+  fill: #ffffff;
+  stroke-width: 2;
+  cursor: crosshair;
+}
+#graph .node-box:hover .port { fill: #dbeafe; }
+
+.legend .hint { color: #64748b; }
+
+/* 节点组：框只包一层，不吃鼠标事件（框里照样双击建节点、照样框选）；标签是抓手 */
+#graph .node-group {
+  fill: rgba(37, 99, 235, 0.04);
+  stroke: #60a5fa;
+  stroke-width: 1.5;
+  stroke-dasharray: 2 5;
+  pointer-events: none;
+}
+/* 组的边＝抓手：透明宽描边，只有「边这一圈」吃事件——框里的空白照样框选、照样双击建节点 */
+#graph .node-group-edge {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  stroke-linejoin: round;
+  pointer-events: stroke;
+  cursor: grab;
+}
+#graph .node-group-edge:active { cursor: grabbing; }
+#graph .node-group-edge.picked { stroke: rgba(29, 78, 216, 0.1); }
+#graph .node-group-chip { pointer-events: auto; cursor: grab; }
+#graph .node-group-chip:active { cursor: grabbing; }
+#graph .node-group-chip rect { fill: #2563eb; }
+#graph .node-group-chip text { fill: #ffffff; font-size: 11px; font-weight: 700; }
+#graph .node-group-chip:hover rect { fill: #1d4ed8; }
+#graph .chip-count { fill: #bfdbfe; font-weight: 600; }
+/* 选中的组：框加粗变色（Delete 会删它） */
+#graph .node-group.picked { stroke: #1d4ed8; stroke-width: 3; stroke-dasharray: none; }
+#graph .group-pill.picked { filter: drop-shadow(0 0 5px rgba(37, 99, 235, 0.55)); }
+/* 循环区＝带循环的组：紫框紫标签（原来那条独立的循环区虚线框已经并进来） */
+#graph .node-group.is-loop { stroke: #7c3aed; stroke-width: 2; stroke-dasharray: 6 4; }
+#graph .node-group-chip.loop rect { fill: #7c3aed; }
+#graph .node-group-chip.loop:hover rect { fill: #6d28d9; }
+
+/* 收纳后的组＝一块替身牌：点它出菜单、拖它整组走 */
+#graph .group-pill { cursor: grab; }
+#graph .group-pill:active { cursor: grabbing; }
+#graph .pill-title { font-size: 13px; font-weight: 700; fill: #1e3a8a; }
+#graph .pill-sub { font-size: 11px; fill: #475569; }
+
+/* 同向链：几节合成一块（「五合一」）。收起时是一张宽卡，摊开时只剩一圈虚线标位置 */
+#graph .chain-box { cursor: grab; }
+#graph .chain-box:active { cursor: grabbing; }
+#graph .chain-box.picked .chain-body { filter: drop-shadow(0 0 6px rgba(14, 165, 233, 0.55)); }
+#graph .chain-title { font-size: 13px; font-weight: 700; fill: #0c4a6e; }
+#graph .chain-sub { font-size: 11px; fill: #64748b; }
+#graph .chain-status { font-size: 11px; font-weight: 600; }
+#graph .chain-count { font-size: 11px; font-weight: 700; fill: #0369a1; }
+#graph .chain-frame {
+  fill: rgba(14, 165, 233, 0.04);
+  stroke: #38bdf8;
+  stroke-width: 1.5;
+  stroke-dasharray: 3 6;
+  pointer-events: none;
+}
+#graph .chain-frame.picked { stroke: #0284c7; stroke-width: 2.5; stroke-dasharray: none; }
+#graph .chain-frame-label { font-size: 11px; fill: #0284c7; pointer-events: none; }
+
+/* 右键菜单 */
+.ctx {
+  position: fixed;
+  z-index: 90;
+  min-width: 210px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ctx.hidden { display: none; }
+.ctx-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.ctx-item:hover:not(:disabled) { background: #eff6ff; }
+.ctx-item:disabled { color: #94a3b8; cursor: not-allowed; }
+.ctx-item.danger { color: #b91c1c; }
+.ctx-item.danger:hover:not(:disabled) { background: #fef2f2; }
+.ctx-item em { color: #64748b; font-size: 11px; font-style: normal; }
+
+/* 右侧属性面板 */
+.propsForm label { display: block; font-size: 12px; color: #334155; margin-bottom: 8px; }
+.propsForm input, .propsForm select {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  padding: 5px 7px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  background: #fff;
+}
+
+.toast {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  max-width: 560px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.16);
+  z-index: 50;
+  background: #fff;
+}
+.toast.ok { border: 1px solid #86efac; background: #f0fdf4; color: #166534; }
+.toast.err { border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; }
+
+#side {
+  width: 420px;
+  border-left: 1px solid var(--line);
+  background: #fff;
+  overflow: auto;
+  padding: 14px;
+}
+
+.sideHint { color: #64748b; font-size: 13px; }
+
+.node-head { margin-bottom: 10px; }
+.node-head h2 { font-size: 16px; margin: 0 0 4px; }
+.node-head .goal { color: #475569; font-size: 13px; }
+
+.chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.section { margin-top: 14px; }
+.section h3 { font-size: 13px; margin: 0 0 6px; color: #334155; text-transform: none; }
+.section ul { margin: 0; padding-left: 18px; }
+.section li { margin: 3px 0; font-size: 13px; }
+.muted { color: #64748b; font-size: 12px; }
+
+.ckp {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: #fcfdff;
+}
+.ckp .kv { font-size: 13px; margin: 2px 0; }
+.ckp .kv span { color: #64748b; }
+.ckp .verdict { font-weight: 700; }
+.verdict.progress { color: var(--approved); }
+.verdict.no_progress { color: var(--blocked); }
+.reject {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+button.primary {
+  border: 1px solid #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button.primary:hover { background: #dbeafe; }
+
+.formhost:empty { display: none; }
+
+.form {
+  border: 1px solid #bfdbfe;
+  background: #f8fbff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.form .formhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.form .formhead button {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.form label {
+  display: block;
+  font-size: 12px;
+  color: #334155;
+  margin-bottom: 8px;
+}
+.form input, .form select {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  padding: 5px 7px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  background: #fff;
+}
+.form .actions { display: flex; gap: 8px; align-items: center; }
+.formResult { font-size: 12px; margin-top: 8px; }
+.formResult.ok { color: #15803d; }
+.formResult.err { color: #b91c1c; }
+.formResult ul { margin: 4px 0 0; padding-left: 16px; }
+
+/* 端口数字段：表单里并排，别撑满一行 */
+.form .portsRow { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; }
+/* 模板库列表：一行一个预设 */
+.tplRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed #e2e8f0;
+  font-size: 13px;
+}
+.tplRow span { flex: 1; min-width: 0; }
+.tplRow em { display: block; color: #64748b; font-size: 11px; font-style: normal; }
+.tplRow button {
+  border: 1px solid #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.tplRow button.danger-btn { border-color: #fca5a5; background: #fef2f2; color: #b91c1c; }
+.form .portsRow input { display: inline-block; width: 64px; margin: 0; }
+.section .portsRow { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 13px; }
+.section .portsRow input {
+  width: 64px;
+  padding: 3px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font: inherit;
+}
+.section .portsRow button {
+  border: 1px solid #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}

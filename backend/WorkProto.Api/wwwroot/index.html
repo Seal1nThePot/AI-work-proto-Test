@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WorkProto · 任务节点原型</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="bar">
+  <div class="brand">WorkProto · 任务节点原型</div>
+  <div class="banner">原型数据，不用于判断真实任务完成</div>
+  <div class="tools">
+    <label>任务 <select id="taskSelect"></select></label>
+    <button id="addTaskBtn" type="button" class="primary">＋ 新建任务</button>
+    <button id="addNodeBtn" type="button" class="primary">＋ 新建节点</button>
+    <button id="addEdgeBtn" type="button" class="primary">＋ 新建连线</button>
+    <button id="tplBtn" type="button" class="primary">模板库</button>
+  <button id="arrangeBtn" type="button">按组整理</button>
+  <button id="overviewBtn" type="button">总览</button>
+    <button id="refreshBtn" type="button">刷新</button>
+    <button id="fitBtn" type="button">重置视图</button>
+    <label class="auto"><input type="checkbox" id="autoRefresh" checked /> 每 5 秒自动刷新</label>
+    <span id="zoomNote" class="dbnote"></span>
+    <span id="dbNote" class="dbnote"></span>
+  </div>
+</header>
+
+<main>
+  <section id="graphPane">
+    <div id="taskSummary" class="summary"></div>
+    <div class="legend" id="legend"></div>
+    <svg id="graph" xmlns="http://www.w3.org/2000/svg"></svg>
+  </section>
+
+  <aside id="side">
+    <div id="formHost"></div>
+    <div class="sideHint">点节点方块就能在下面改它的属性（标题 / 一行目标 / 类型 / 循环区），也能看到输入条件、最近三次检查点、上次被拒原因。<br>
+      操作：拖节点移动 · 框选或 Shift 点多选 · Shift 拖＝左右吸附 · 双击空白＝直接建节点 · 右键点节点/组标签＝菜单 · 右键按住拖＝连线（Shift＝回边）。</div>
+    <div id="sideBody"></div>
+  </aside>
+</main>
+
+<div id="ctxMenu" class="ctx hidden"></div>
+<div id="toast" class="toast" style="display:none"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
