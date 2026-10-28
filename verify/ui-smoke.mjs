@@ -2,7 +2,7 @@
 // 覆盖：拖动落坐标 / 双击空白建节点 / 右键长按连线 / 新建任务 / 表单路径 / 各类拒绝。
 // 由 verify\run-ui-smoke.ps1 起临时库服务后调用。
 const BASE = process.env.PROTO_BASE || 'http://127.0.0.1:5083';
-const APP = new URL('../backend/WorkProto.Api/wwwroot/app.js', import.meta.url);
+const WWW = new URL('../backend/WorkProto.Api/wwwroot/', import.meta.url);
 
 class El {
   constructor(id) {
@@ -53,7 +53,13 @@ globalThis.document = {
 };
 globalThis.window = globalThis;
 
-const src = (await import('node:fs')).readFileSync(APP, 'utf8');
+// 页面脚本以 index.html 为唯一真相源：抽全部 <script src>，按顺序拼接后整段喂给 new Function。
+// 这样 src 下再切多少次文件，加载器都不用改（顺序即依赖，见 index.html）。
+const fsMod = await import('node:fs');
+const html = fsMod.readFileSync(new URL('index.html', WWW), 'utf8');
+const scriptSrcs = [...html.matchAll(/<script\s+src="([^"]+)"/g)].map((m) => m[1]);
+if (!scriptSrcs.length) throw new Error('index.html 里没找到 <script src>');
+const src = scriptSrcs.map((s) => fsMod.readFileSync(new URL(s, WWW), 'utf8')).join('\n');
 let frameRequests = 0;
 const fakeSetTimeout = (cb) => { frameRequests += 1; return frameRequests; };
 const load = new Function(

@@ -1,3 +1,8 @@
+/* 用途: 全部视觉与选择态（.picked/.focus/.edge-focus/.edge-dim、组框手柄、总览牌、toast） */
+/* 暴露: 无 */
+/* 依赖: index.html 里用到的 class 名 */
+/* 被依赖: index.html */
+
 :root {
   --pending: #6b7280;
   --active: #2563eb;

@@ -37,7 +37,9 @@ backend\WorkProto.Api\
   Proto.Task.cs        任务级：建图 / 删任务 / 删节点
   wwwroot\
     index.html     工具栏 + 画布容器 + 右栏面板的骨架
-    app.js         画布全部逻辑：渲染、手势、选区、拖动、连线、面板、抽屉式收纳
+    src\           已按层切出 4 个文件（P2）：00-const（常量）/ 01-state（状态）/ 02-dom（$ esc cut fmt showToast）/ 03-api（api + 取数）
+      ↑ 顺序即依赖，index.html 里的 <script src> 是唯一真相源
+    app.js         还没切走的部分：渲染、手势、选区、拖动、连线、面板、抽屉式收纳（逐阶段继续切）
     style.css      所有视觉与选择态（`.picked` / `.focus` / `.edge-focus` / `.edge-dim` 都在 CSS 里）
 ```
 

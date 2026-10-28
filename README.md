@@ -56,7 +56,8 @@ test\
                                Read / NodeWrite / Group / Edge / Template / Task / ApiResult / Reasons /
                                Contracts / Rows（逐文件职责见 backend\WorkProto.Api\索引.md）
     索引.md                     每个文件夹一份，由 tools/gen-index.mjs 从文件头生成，勿手改
-    wwwroot\                   index.html + app.js（手写 SVG 画布）+ style.css
+    wwwroot\                   index.html（脚本装配单）+ app.js（手写 SVG 画布）+ style.css
+      src\                     已切出的分段脚本：00-const / 01-state / 02-dom / 03-api（顺序即依赖）
   verify\
     run-acceptance.ps1         接口验收（160 项）
     run-ui-smoke.ps1           页面验收（192 项）+ ui-smoke.mjs（DOM 桩）
