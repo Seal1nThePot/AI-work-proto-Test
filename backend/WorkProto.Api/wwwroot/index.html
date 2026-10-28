@@ -1,6 +1,6 @@
 <!-- 用途: 页面骨架 + 脚本装配单：<script src> 的顺序就是依赖顺序（index.html 是唯一真相源，加载器跟着它走） -->
 <!-- 暴露: 无（DOM 结构） -->
-<!-- 依赖: src\00-const.js → 01-state.js → 02-dom.js → 03-api.js → app.js -->
+<!-- 依赖: src\00-const.js → 01-state.js → 02-dom.js → 03-api.js → 10-geo.js → 11-layout.js → 12-chain.js → 13-group.js → 30-select.js → app.js -->
 <!-- 被依赖: verify\ui-smoke.mjs（按此顺序拼接脚本）、run-canvas-bench.mjs -->
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -52,6 +52,11 @@
 <script src="src/01-state.js"></script>
 <script src="src/02-dom.js"></script>
 <script src="src/03-api.js"></script>
+<script src="src/10-geo.js"></script>
+<script src="src/11-layout.js"></script>
+<script src="src/12-chain.js"></script>
+<script src="src/13-group.js"></script>
+<script src="src/30-select.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

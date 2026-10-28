@@ -1,98 +1,16 @@
-// ────────── app.js ──────────「画布主逻辑」
-// 用途: 画布剩余逻辑：布局、渲染、手势、面板、表单、写操作、装配（P2 只切走常量/状态/DOM 工具/取数四个文件，其余原样留在这里，逐阶段继续切）
+// ────────── app.js ──────────「画布主逻辑（尚未切走的部分）」
+// 用途: 画布剩余逻辑：渲染、手势、面板、表单、写操作、装配（逐阶段继续切到 src\）
 // 暴露: （全部顶层函数与 state 的消费方）
 // 依赖: src/00-const.js src/01-state.js src/02-dom.js src/03-api.js
 // 被依赖: index.html
 
-// ---------------- 布局 ----------------
-
-function autoDepths(graph) {
-  const depth = new Map(graph.nodes.map((n) => [n.id, 0]));
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-  const transfer = graph.edges.filter((e) => e.kind === "transfer");
-  for (let i = 0; i < graph.nodes.length + 1; i++) {
-    for (const e of transfer) {
-      if (!byId.has(e.fromNodeId) || !byId.has(e.toNodeId)) continue;
-      if (byId.get(e.fromNodeId).status === "skipped") continue;
-      depth.set(e.toNodeId, Math.max(depth.get(e.toNodeId), depth.get(e.fromNodeId) + 1));
-    }
-  }
-  return depth;
-}
-
-function layout(graph) {
-  const depth = autoDepths(graph);
-  const columns = new Map();
-  for (const n of graph.nodes) {
-    const d = depth.get(n.id) || 0;
-    if (!columns.has(d)) columns.set(d, []);
-    columns.get(d).push(n);
-  }
-  const pos = new Map();
-  for (const d of [...columns.keys()].sort((a, b) => a - b)) {
-    columns.get(d).sort((a, b) => a.seq - b.seq).forEach((n, i) => {
-      const hasPos = Number.isFinite(n.posX) && Number.isFinite(n.posY);
-      const level = n.compact || 0;
-      pos.set(n.id, {
-        x: hasPos ? n.posX : 40 + d * (NODE_W + NODE_GAP_X),
-        y: hasPos ? n.posY : 60 + i * (NODE_H + NODE_GAP_Y),
-        w: level ? COMPACT_W : NODE_W,
-        h: level ? COMPACT_H : NODE_H,
-        inPorts: Math.max(1, n.inPorts || 1),
-        outPorts: Math.max(1, n.outPorts || 1)
-      });
-    });
-  }
-  return pos;
-}
-
 /** 组的先后：按跨组的 transfer 边做拓扑排序（环就按 seq 接在后面），未分组节点当最后一列。 */
-function groupOrder(graph) {
-  const ids = (graph.nodeGroups || []).map((g) => g.id);
-  const hasLoose = graph.nodes.some((n) => !n.groupId);
-  if (hasLoose) ids.push(LOOSE_KEY);
-  const keyOf = (n) => n.groupId || LOOSE_KEY;
-  const seqOf = new Map();
-  for (const n of graph.nodes) {
-    const k = keyOf(n);
-    seqOf.set(k, Math.min(seqOf.get(k) ?? Number.MAX_SAFE_INTEGER, n.seq));
-  }
-  const succ = new Map(ids.map((i) => [i, new Set()]));
-  const indeg = new Map(ids.map((i) => [i, 0]));
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-  for (const e of graph.edges) {
-    if (e.kind !== "transfer") continue;
-    const a = byId.get(e.fromNodeId), b = byId.get(e.toNodeId);
-    if (!a || !b) continue;
-    const ka = keyOf(a), kb = keyOf(b);
-    if (ka === kb || !succ.has(ka) || !succ.has(kb)) continue;
-    if (succ.get(ka).has(kb)) continue;
-    succ.get(ka).add(kb);
-    indeg.set(kb, indeg.get(kb) + 1);
-  }
-  const bySeq = (x, y) => (seqOf.get(x) ?? 0) - (seqOf.get(y) ?? 0);
-  const ready = ids.filter((i) => indeg.get(i) === 0).sort(bySeq);
-  const order = [];
-  while (ready.length) {
-    const cur = ready.shift();
-    order.push(cur);
-    for (const nx of succ.get(cur)) {
-      indeg.set(nx, indeg.get(nx) - 1);
-      if (indeg.get(nx) === 0) { ready.push(nx); ready.sort(bySeq); }
-    }
-  }
-  for (const i of ids.filter((x) => !order.includes(x)).sort(bySeq)) order.push(i);   // 组间有环：剩下的按 seq 接在后面
-  return order;
-}
 
 /**
  * 自动整理：一列一列按组的先后摆块，块内按依赖深度从左到右、由上到下。
  * 只算坐标（不碰任何语义），算完照常走 POST /tasks/{id}/layout 落库。
  * 目标宽度 SHELF_W：摆满就换行，免得 8 个组排成一条望不到头的长龙。
  */
-const LOOSE_KEY = "__loose__";
-const COL_PITCH = NODE_W + 64;    // 层与层的水平间距：一束线要有地方散开
-const ROW_GAP = 34;
 
 /**
  * 组内布局＝按依赖分层，不是网格。
@@ -101,309 +19,33 @@ const ROW_GAP = 34;
  * 组内不折行：一条流从左往右走到底（画布本来就没边），折成上下几条带会把「前后」读丢。
  * BAND 只是极端兜底（真有一百多层才换带）。
  */
-const BAND = 64;
-function groupLayered(list, edges) {
-  const ids = new Set(list.map((n) => n.id));
-  const preds = new Map(list.map((n) => [n.id, []]));
-  for (const e of edges) {
-    if (e.kind !== "transfer" || e.fromNodeId === e.toNodeId) continue;
-    if (!ids.has(e.fromNodeId) || !ids.has(e.toNodeId)) continue;
-    preds.get(e.toNodeId).push(e.fromNodeId);
-  }
-  // 最长路径分层（有环时用节点数兜底，不会转死）
-  const layer = new Map(list.map((n) => [n.id, 0]));
-  for (let it = 0; it < list.length; it++) {
-    let changed = false;
-    for (const [to, ps] of preds) {
-      for (const p of ps) {
-        const v = layer.get(p) + 1;
-        if (v > layer.get(to) && v < list.length) { layer.set(to, v); changed = true; }
-      }
-    }
-    if (!changed) break;
-  }
-  const layers = [];
-  for (const n of list) {
-    const L = layer.get(n.id);
-    (layers[L] || (layers[L] = [])).push(n);
-  }
-  const pos = new Map();
-  const centerY = new Map();
-  let bandTopY = 0;
-  let curBand = 0;
-  const bandH = [];
-  for (let L = 0; L < layers.length; L++) {
-    const col = layers[L] || [];
-    if (!col.length) continue;
-    if (L > 0 && L % BAND === 0) {                 // 换横带：下一段从新的一行开始
-      bandTopY += (bandH[curBand] || NODE_H) + 130;
-      curBand += 1;
-    }
-    // ① 目标 y＝前驱重心（这就是「汇合点对准那三份材料」）
-    const target = new Map();
-    for (const n of col) {
-      const cs = preds.get(n.id).filter((p) => centerY.has(p));
-      target.set(n.id, cs.length ? cs.reduce((s, p) => s + centerY.get(p), 0) / cs.length - NODE_H / 2 : null);
-    }
-    const arr = col.slice().sort((a, b) => {
-      const ta = target.get(a.id), tb = target.get(b.id);
-      if (ta != null && tb != null && Math.abs(ta - tb) > 1) return ta - tb;
-      if (ta != null && tb == null) return -1;
-      if (ta == null && tb != null) return 1;
-      return a.seq - b.seq;
-    });
-    // ② 先按目标放，再把挤在一起的往下推开（列内的 cursor 只在本列内累积）
-    let cursor = -Infinity;
-    const assigned = [];
-    for (const n of arr) {
-      const t = target.get(n.id);
-      let y = t == null ? (cursor === -Infinity ? bandTopY : cursor) : Math.max(t, cursor === -Infinity ? t : cursor);
-      if (y < bandTopY) y = bandTopY;
-      assigned.push({ n, y, t });
-      cursor = y + NODE_H + ROW_GAP;
-    }
-    // ③ 整列按"有目标的那些"的重心对齐：扇出的 4 条以扇出点为中心上下摊开，汇合点落在 4 条中间
-    const withT = assigned.filter((a) => a.t != null);
-    if (withT.length) {
-      const shift = withT.reduce((s, a) => s + a.t, 0) / withT.length - withT.reduce((s, a) => s + a.y, 0) / withT.length;
-      for (const a of assigned) a.y += shift;
-    }
-    for (const a of assigned) {
-      pos.set(a.n.id, { col: L % BAND, band: curBand, y: a.y });
-      centerY.set(a.n.id, a.y + NODE_H / 2);
-      bandH[curBand] = Math.max(bandH[curBand] || 0, a.y + NODE_H - bandTopY);
-    }
-  }
-  // 整块从 y=0 起（bandTopY 只是过程中的相对基准）
-  const ys = [...pos.values()].map((p) => p.y);
-  const minY = ys.length ? Math.min(...ys) : 0;
-  for (const p of pos.values()) p.y = Math.round(p.y - minY);
-  const cols = Math.min(BAND, Math.max(1, layers.filter((c) => c && c.length).length));
-  return {
-    pos,
-    width: cols * COL_PITCH + NODE_W - COL_PITCH,
-    height: Math.max(...bandH.filter((h) => h > 0), NODE_H)
-  };
-}
 
 /**
  * 自动整理：整张图只有一条「前后」主线——组按跨组依赖排出先后，一组一块、从左往右依次挨着放；
  * 组内同样从左往右（依赖分层），一条流走到底不折行。
  * 只算坐标，不碰任何语义；算完照常走 POST /tasks/{id}/layout 落库。
  */
-function arrangePositions(graph) {
-  const order = groupOrder(graph);
-  const buckets = new Map(order.map((k) => [k, []]));
-  for (const n of graph.nodes) {
-    const k = n.groupId || LOOSE_KEY;
-    if (!buckets.has(k)) buckets.set(k, []);
-    buckets.get(k).push(n);
-  }
-  const blocks = [];
-  for (const key of order) {
-    const list = buckets.get(key) || [];
-    if (!list.length) continue;
-    blocks.push({ key, block: groupLayered(list, graph.edges) });
-  }
-  const maxH = blocks.length ? Math.max(...blocks.map((b) => b.block.height)) : NODE_H;
-  const pos = new Map();
-  let x = 60;
-  const y0 = 160;
-  for (const { block } of blocks) {
-    const y = y0 + Math.round((maxH - block.height) / 2);   // 组块纵向居中对齐：出口接着下一个入口，看起来才是一条直线
-    for (const [id, p] of block.pos) {
-      pos.set(id, { x: Math.round(x + p.col * COL_PITCH), y: Math.round(y + p.y) });
-    }
-    x += block.width + 240;                                 // 块间留够：组框 + 标签都要地方
-  }
-  return pos;
-}
 
 /** 一键按组重排：先本地生效（图与渲染缓存同写，避免回弹），再落库。 */
-async function arrangeByGroups() {
-  const g = state.graph;
-  if (!g || !g.nodes.length) return;
-  const pos = arrangePositions(g);
-  for (const n of g.nodes) {
-    const p = pos.get(n.id);
-    if (!p) continue;
-    n.posX = p.x;
-    n.posY = p.y;
-  }
-  render();
-  fitView();
-  syncGraphJson();
-  const payload = { nodes: g.nodes.map((n) => ({ id: n.id, x: n.posX, y: n.posY })) };
-  const r = await api(`/api/tasks/${encodeURIComponent(g.task.id)}/layout`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  showToast(r.ok ? `已按组重排 ${payload.nodes.length} 个节点` : `整理后的坐标没存上：${r.body?.error || r.status}`, r.ok);
-}
 
 /** 总览：所有组收成牌、牌子按组的先后排成整齐的格子（组间线收拢成一条并标 ×N），再点一次全摊开。 */
-async function toggleOverview() {
-  const g = state.graph;
-  const groups = (g && g.nodeGroups) || [];
-  if (!groups.length) { showToast("这个任务还没有节点组，先圈几个节点成组", false); return; }
-  const target = !state.overview;          // 进入总览＝全收起；退出＝全摊开
-  let changed = 0;
-  for (const grp of groups) {
-    if (!!grp.collapsed === target) continue;
-    const r = await api(`/api/node-groups/${encodeURIComponent(grp.id)}/collapse`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ collapsed: target })
-    });
-    if (r.ok) { grp.collapsed = target; changed += 1; }
-  }
-  state.overview = target;
-  render();
-  fitView();
-  syncGraphJson();
-  showToast(target ? `总览：${groups.length} 个组按先后排好了` : `已摊开 ${changed} 个组`, true);
-}
 
 /** 连线落在哪个区域：左进、右出、底部（回边）。count>1 时沿边等分。 */
-function portPoint(kind, p, index = 0, count = 1) {
-  if (kind === "bottom") return { x: p.x + p.w / 2, y: p.y + p.h };
-  const ratio = count <= 1 ? 0.5 : (index + 1) / (count + 1);
-  return kind === "out"
-    ? { x: p.x + p.w, y: p.y + p.h * ratio }
-    : { x: p.x, y: p.y + p.h * ratio };
-}
-
-function edgePath(from, to, edge) {
-  if (!from || !to) return "";
-  if (edge.kind === "loop") {
-    const a = portPoint("bottom", from);
-    const b = portPoint("bottom", to);
-    const dip = Math.max(a.y, b.y) + 46;
-    return `M ${a.x} ${a.y} C ${a.x} ${dip}, ${b.x} ${dip}, ${b.x} ${b.y}`;
-  }
-  const a = portPoint("out", from, edge.fromPort || 0, from.outPorts || 1);
-  const b = portPoint("in", to, edge.toPort || 0, to.inPorts || 1);
-  const dx = b.x - a.x;
-  if (dx > 40) {
-    const mid = (a.x + b.x) / 2;
-    return `M ${a.x} ${a.y} C ${mid} ${a.y}, ${mid} ${b.y}, ${b.x} ${b.y}`;
-  }
-  const bulge = Math.max(60, Math.abs(dx) / 2 + 60);
-  return `M ${a.x} ${a.y} C ${a.x + bulge} ${a.y}, ${b.x - bulge} ${b.y}, ${b.x} ${b.y}`;
-}
-
-// ---------------- 视口（缩放 / 平移 / 坐标） ----------------
-
-function captureView() {
-  const svg = $("graph");
-  const rect = svg && svg.getBoundingClientRect ? svg.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
-  state.view = { left: rect.left, top: rect.top, width: rect.width, height: rect.height, sx: 1, sy: 1 };
-  return state.view;
-}
 
 /** 屏幕坐标 → 画布世界坐标（含缩放与平移）。 */
-function svgPoint(ev) {
-  const v = state.view || captureView();
-  const vp = state.viewport;
-  const ux = (ev.clientX - v.left) * v.sx;
-  const uy = (ev.clientY - v.top) * v.sy;
-  return { x: (ux - vp.tx) / vp.scale, y: (uy - vp.ty) / vp.scale };
-}
 
 /** 世界坐标 → 屏幕坐标（测试与锚点计算用）。 */
-function worldToScreen(pt) {
-  const v = state.view || captureView();
-  const vp = state.viewport;
-  return { x: pt.x * vp.scale + vp.tx + v.left, y: pt.y * vp.scale + vp.ty + v.top };
-}
-
-function viewportEl() {
-  const svg = $("graph");
-  return svg && svg.querySelector ? svg.querySelector("#viewport") : null;
-}
-
-function applyViewport() {
-  const g = viewportEl();
-  const vp = state.viewport;
-  if (g && g.setAttribute) g.setAttribute("transform", `translate(${vp.tx},${vp.ty}) scale(${vp.scale})`);
-  applyGrid();
-  const note = $("zoomNote");
-  if (note) note.textContent = `缩放 ${Math.round(vp.scale * 100)}%`;
-}
 
 /**
  * 底纹跟着视口走：格子原点＝世界原点，平移缩放时格子一起动。
  * 画布没有边缘上限，所以不能给一块固定大小的底纹——否则一平移就露馅。
  */
-function applyGrid() {
-  const svg = $("graph");
-  if (!svg || !svg.style) return;
-  const vp = state.viewport;
-  let step = GRID_STEP;
-  while (step * vp.scale < 8) step *= 4;          // 缩得太小就把格子放大，免得糊成一片
-  const px = Math.round(step * vp.scale * 100) / 100;
-  svg.style.backgroundSize = `${px}px ${px}px`;
-  svg.style.backgroundPosition = `${vp.tx}px ${vp.ty}px`;
-}
 
 /** 滚轮缩放：锚在光标下的那个点，缩放前后它不动。 */
-function zoomAt(clientX, clientY, deltaY) {
-  captureView();
-  const vp = state.viewport;
-  const v = state.view;
-  const ux = clientX - v.left;
-  const uy = clientY - v.top;
-  const before = { x: (ux - vp.tx) / vp.scale, y: (uy - vp.ty) / vp.scale };
-  const factor = Math.exp(-deltaY * 0.0015);
-  const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, vp.scale * factor));
-  vp.scale = scale;
-  vp.tx = ux - before.x * scale;
-  vp.ty = uy - before.y * scale;
-  applyViewport();
-  return { scale: vp.scale, tx: vp.tx, ty: vp.ty, anchor: before };
-}
 
 /** 把整张图塞进视口。收纳起来的组按那块牌算，别为看不见的节点缩得太小。 */
-function fitView() {
-  const hidden = state.hiddenIds || new Set();
-  const pts = [];
-  for (const [id, p] of state.positions) {
-    if (hidden.has(id)) continue;
-    pts.push(p);
-  }
-  for (const pill of (state.pills || new Map()).values()) pts.push(pill);
-  for (const r of (state.chainRects || new Map()).values()) pts.push(r);
-  applyFit(pts);
-}
 
 /** 只框住一组节点（从总览点开一块牌时用）：不然一屏 150 个节点谁也看不清。 */
-function fitToNodes(ids) {
-  const pts = ids.map((id) => state.positions.get(id)).filter(Boolean);
-  applyFit(pts.length ? pts : null);
-}
-
-function applyFit(pts) {
-  const svg = $("graph");
-  if (!svg) return;
-  captureView();
-  const v = state.view;
-  if (!pts || !pts.length) {
-    state.viewport = { scale: 1, tx: 20, ty: 20 };
-    applyViewport();
-    return;
-  }
-  const minX = Math.min(...pts.map((p) => p.x));
-  const minY = Math.min(...pts.map((p) => p.y));
-  const maxX = Math.max(...pts.map((p) => p.x + p.w));
-  const maxY = Math.max(...pts.map((p) => p.y + p.h));
-  const w = Math.max(1, maxX - minX);
-  const h = Math.max(1, maxY - minY);
-  const pad = 40;
-  const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.min((v.width - pad * 2) / w, (v.height - pad * 2) / h, 1)));
-  state.viewport = { scale, tx: pad - minX * scale, ty: pad - minY * scale };
-  applyViewport();
-}
 
 // ---------------- 渲染 ----------------
 
@@ -500,7 +142,6 @@ function render() {
       ${chipTail ? `<text x="${cw - 8}" y="14" text-anchor="end" class="chip-count" fill="${st.color}">${esc(chipTail)}</text>` : ""}
     </g>`);
   }
-
 
   // 大图（节点多）默认把「组间」的线收成一束：一条线 + ×N，组内的线照旧一条条画。
   // 不然十个组各摊一片，跨组线横穿整张画布，叠起来就是一坨。
@@ -722,325 +363,33 @@ function render() {
   applyViewport();
 }
 
-// ---------------- 节点组（纯视觉分组） ----------------
-
-/** 组的框＝成员包围盒再放宽一圈，框上方留一条给标签。 */
-function groupBounds(groupId) {
-  const g = state.graph;
-  if (!g) return null;
-  const members = (g.nodes || [])
-    .filter((n) => n.groupId === groupId)
-    .map((n) => state.positions.get(n.id))
-    .filter(Boolean);
-  if (!members.length) return null;
-  return {
-    x1: Math.min(...members.map((p) => p.x)) - 22,
-    y1: Math.min(...members.map((p) => p.y)) - 40,
-    x2: Math.max(...members.map((p) => p.x + p.w)) + 22,
-    y2: Math.max(...members.map((p) => p.y + p.h)) + 22
-  };
-}
-
-function groupTitle(groupId) {
-  const grp = (state.graph?.nodeGroups || []).find((x) => x.id === groupId);
-  return grp ? grp.title : groupId;
-}
-
-function collapsedGroupIds() {
-  return new Set((state.graph?.nodeGroups || []).filter((g) => g.collapsed).map((g) => g.id));
-}
-
-function groupMembers(groupId) {
-  return (state.graph?.nodes || []).filter((n) => n.groupId === groupId);
-}
-
 /** 收纳后的组显示成一块「牌」：成员节点全部藏起来，用这块牌代替（位置取成员包围盒左上角）。 */
 /** 一个组在画布上的占位：收成牌就是牌，摊开就是组框。束线两头都落在它上面。 */
-function groupBoxOf(gid) {
-  const pill = state.pills?.get(gid);
-  if (pill) return { x1: pill.x, y1: pill.y, x2: pill.x + pill.w, y2: pill.y + pill.h };
-  const b = groupBounds(gid);
-  return b ? { x1: b.x1, y1: b.y1, x2: b.x2, y2: b.y2 } : null;
-}
 
 /** 一个组的进度快照：总览/组标签上要一眼看出这个组到哪了、有没有卡住。 */
-function groupStats(groupId) {
-  const members = groupMembers(groupId);
-  let done = 0, doing = 0, blocked = 0;
-  for (const n of members) {
-    if (n.status === "approved" || n.status === "skipped") done += 1;
-    else if (n.status === "active" || n.status === "review") doing += 1;
-    else if (n.status === "blocked") blocked += 1;
-  }
-  const color = blocked ? "#dc2626" : doing ? "#2563eb" : done === members.length && members.length ? "#16a34a" : "#94a3b8";
-  return { count: members.length, done, doing, blocked, color };
-}
 
 /** 总览模式：牌子按组的先后排成整齐的格子，不再各自站在成员包围盒的左上角（那样牌会散到天边）。 */
-const OV = { cols: 8, w: 268, h: 78, gx: 66, gy: 62, x0: 90, y0: 180 };   // 总览也是一条前后线：一行放得下就一行
-function overviewPillRect(gid) {
-  const order = state.overviewOrder || [];
-  const i = Math.max(0, order.indexOf(gid));
-  const cols = Math.min(OV.cols, Math.max(1, order.length));
-  return {
-    x: OV.x0 + (i % cols) * (OV.w + OV.gx),
-    y: OV.y0 + Math.floor(i / cols) * (OV.h + OV.gy),
-    w: OV.w,
-    h: OV.h,
-    inPorts: 1,
-    outPorts: 1,
-    pill: true,
-    step: i + 1
-  };
-}
-
-function pillRect(groupId) {
-  if (state.overview) {
-    const r = overviewPillRect(groupId);
-    const outs = new Set(), ins = new Set();
-    for (const e of state.graph?.edges || []) {
-      const fg = state.nodesById?.get(e.fromNodeId)?.groupId;
-      const tg = state.nodesById?.get(e.toNodeId)?.groupId;
-      if (fg === groupId && tg !== groupId) outs.add(tg || e.toNodeId);
-      if (tg === groupId && fg !== groupId) ins.add(fg || e.fromNodeId);
-    }
-    r.inPorts = Math.min(4, Math.max(1, ins.size));
-    r.outPorts = Math.min(4, Math.max(1, outs.size));
-    return r;
-  }
-  const members = groupMembers(groupId).map((n) => state.positions.get(n.id)).filter(Boolean);
-  if (!members.length) return null;
-  // 出/进线口按"接到几个别的组"分：总览时 8 块牌之间的线才不会全糊在一个点上
-  const outs = new Set(), ins = new Set();
-  const g = state.graph;
-  if (g) {
-    for (const e of g.edges) {
-      const fg = state.nodesById?.get(e.fromNodeId)?.groupId;
-      const tg = state.nodesById?.get(e.toNodeId)?.groupId;
-      if (fg === groupId && tg !== groupId) outs.add(tg || e.toNodeId);
-      if (tg === groupId && fg !== groupId) ins.add(fg || e.fromNodeId);
-    }
-  }
-  return {
-    x: Math.min(...members.map((p) => p.x)),
-    y: Math.min(...members.map((p) => p.y)),
-    w: NODE_W,
-    h: 78,
-    inPorts: Math.min(6, Math.max(1, ins.size)),
-    outPorts: Math.min(6, Math.max(1, outs.size)),
-    pill: true
-  };
-}
 
 /** 藏起来的节点：属于已收纳的组、或属于已收起的同向链。 */
-function hiddenNodeIds() {
-  const out = new Set();
-  const collapsed = collapsedGroupIds();
-  if (collapsed.size) {
-    for (const n of state.graph?.nodes || []) if (n.groupId && collapsed.has(n.groupId)) out.add(n.id);
-  }
-  // 同向链收起：整条都换成一块。组已经收成牌的话跟着组走，别再叠一层。
-  for (const ch of state.chains || []) {
-    if (!chainIsCollapsed(ch)) continue;
-    const head = state.nodesById ? state.nodesById.get(ch.headNodeId) : null;
-    if (head && head.groupId && collapsed.has(head.groupId)) continue;
-    for (const id of ch.nodeIds || []) out.add(id);
-  }
-  return out;
-}
-
-function groupChipWidth(title) {
-  return Math.max(72, 34 + cut(title, 14).length * 12);
-}
-
-function redrawGroupBox(groupId) {
-  const chip = state.groupChipEls.get(groupId);
-  if (state.collapsedIds && state.collapsedIds.has(groupId)) {
-    const pill = pillRect(groupId);
-    const g = state.pillEls ? state.pillEls.get(groupId) : null;
-    if (pill && g && g.setAttribute) g.setAttribute("transform", `translate(${pill.x},${pill.y})`);
-    return;
-  }
-  const b = groupBounds(groupId);
-  const rect = state.groupEls.get(groupId);
-  const band = state.groupEdgeEls ? state.groupEdgeEls.get(groupId) : null;
-  if (!b) return;
-  for (const el of [rect, band]) {
-    if (!el || !el.setAttribute) continue;
-    el.setAttribute("x", b.x1);
-    el.setAttribute("y", b.y1);
-    el.setAttribute("width", b.x2 - b.x1);
-    el.setAttribute("height", b.y2 - b.y1);
-  }
-  if (chip && chip.setAttribute) chip.setAttribute("transform", `translate(${b.x1 + 10},${b.y1 - 12})`);
-}
 
 /** 拖动时把「这个节点牵动的框」全刷一遍：循环区 + 它所在的节点组 + 它所在的那条链块。 */
-function redrawBoxesFor(ids) {
-  const groupIds = new Set();
-  const chainIds = new Set();
-  for (const id of ids) {
-    redrawCycleFor(id);
-    const n = state.nodesById.get(id);
-    if (n && n.groupId) groupIds.add(n.groupId);
-    const ch = state.chainByMember ? state.chainByMember.get(id) : null;
-    if (ch) chainIds.add(ch.id);
-  }
-  for (const gid of groupIds) redrawGroupBox(gid);
-  for (const cid of chainIds) redrawChainFor(cid);
-}
-
-// ---------------- 同向链（一根筋接下去的几节，收成一块看） ----------------
-// 纯前端：链是从「连线」里读出来的看法，不是数据——后端只有节点和边，一个字段都没加。
-// 收没收起也只记在内存里，刷新页面就摊开（要长期记住再说）。
-
-function chainMembers(chain) {
-  return ((chain && chain.nodeIds) || []).map((id) => state.nodesById.get(id)).filter(Boolean);
-}
 
 /** 链块画在链头的坐标上：比节点宽一点、同高，左右口照旧（端口号取进出边里最大的那个）。 */
-function chainRect(chain) {
-  const head = state.positions.get(chain.headNodeId);
-  if (!head) return null;
-  const ids = new Set(chain.nodeIds || []);
-  let inPorts = 1;
-  let outPorts = 1;
-  for (const e of state.graph?.edges || []) {
-    const fromIn = ids.has(e.fromNodeId);
-    const toIn = ids.has(e.toNodeId);
-    if (fromIn === toIn) continue;                       // 链内部的线不算口
-    if (toIn) inPorts = Math.max(inPorts, (e.toPort || 0) + 1);
-    else outPorts = Math.max(outPorts, (e.fromPort || 0) + 1);
-  }
-  return { x: head.x, y: head.y, w: CHAIN_W, h: CHAIN_H, inPorts, outPorts };
-}
 
 /** 摊开时的虚线框：把这条链的几个节点圈起来，让人知道「这条链现在在哪」。 */
-function chainFrameRect(chain) {
-  const members = chainMembers(chain).map((n) => state.positions.get(n.id)).filter(Boolean);
-  if (!members.length) return null;
-  return {
-    x: Math.min(...members.map((p) => p.x)) - 18,
-    y: Math.min(...members.map((p) => p.y)) - 26,
-    w: Math.max(...members.map((p) => p.x + p.w)) + 18 - (Math.min(...members.map((p) => p.x)) - 18),
-    h: Math.max(...members.map((p) => p.y + p.h)) + 16 - (Math.min(...members.map((p) => p.y)) - 26)
-  };
-}
-
-function chainTitleText(chain) {
-  const members = chainMembers(chain);
-  if (members.length < 2) return "同向链";
-  return `${members[0].title} › … › ${members[members.length - 1].title}`;
-}
-
-function chainIdOf(headNodeId) {
-  return `ch:${headNodeId}`;
-}
 
 /** 收起来了没：只认内存里那个集合（链头节点 id）。 */
-function chainIsCollapsed(chain) {
-  return !!chain && state.collapsedChains.has(chain.headNodeId);
-}
-
-function chainById(chainId) {
-  return (state.chains || []).find((x) => x.id === chainId) || null;
-}
 
 /** 进出边索引：算链只认 transfer 边（回边是另一回事），一次建好给整张图用。 */
-function chainIndex() {
-  if (state.chainIndex) return state.chainIndex;
-  const ins = new Map();
-  const outs = new Map();
-  for (const n of state.graph?.nodes || []) { ins.set(n.id, []); outs.set(n.id, []); }
-  for (const e of state.graph?.edges || []) {
-    if (e.kind !== "transfer") continue;
-    if (!outs.has(e.fromNodeId) || !ins.has(e.toNodeId)) continue;
-    if (!outs.get(e.fromNodeId).includes(e.toNodeId)) outs.get(e.fromNodeId).push(e.toNodeId);
-    if (!ins.get(e.toNodeId).includes(e.fromNodeId)) ins.get(e.toNodeId).push(e.fromNodeId);
-  }
-  state.chainIndex = { ins, outs };
-  return state.chainIndex;
-}
 
 /**
  * 从任意一节往回追到链头、再顺下去追到链尾。判定：当前只有一条入边、那条入边的上游只有这一条出边，
  * 就算「一路接下去」；碰到分叉、汇合、或者跨了节点组就停。
  */
-function walkChainFrom(nodeId, ins, outs) {
-  const groupOf = (id) => (state.nodesById.get(id) || {}).groupId || "";
-  const group = groupOf(nodeId);
-  const seen = new Set([nodeId]);
-  const chain = [nodeId];
-  let cur = nodeId;
-  while (chain.length < 60) {
-    const list = ins.get(cur) || [];
-    if (list.length !== 1) break;
-    const prev = list[0];
-    if ((outs.get(prev) || []).length !== 1 || groupOf(prev) !== group || seen.has(prev)) break;
-    seen.add(prev);
-    chain.unshift(prev);
-    cur = prev;
-  }
-  cur = nodeId;
-  while (chain.length < 60) {
-    const list = outs.get(cur) || [];
-    if (list.length !== 1) break;
-    const next = list[0];
-    if ((ins.get(next) || []).length !== 1 || groupOf(next) !== group || seen.has(next)) break;
-    seen.add(next);
-    chain.push(next);
-    cur = next;
-  }
-  return chain;
-}
 
 /** 给一个节点，返回它所在的那条同向链（可能只有它自己）。 */
-function walkChainLocal(nodeId) {
-  if (!state.nodesById.has(nodeId)) return [];
-  const { ins, outs } = chainIndex();
-  return walkChainFrom(nodeId, ins, outs);
-}
 
 /** 全图所有同向链：每个链头出一条，成员 ≥2 才算链。 */
-function graphChains() {
-  const { ins, outs } = chainIndex();
-  const seen = new Set();
-  const list = [];
-  for (const n of state.graph?.nodes || []) {
-    const chain = walkChainFrom(n.id, ins, outs);
-    if (chain.length < 2 || seen.has(chain[0])) continue;
-    for (const id of chain) seen.add(id);
-    list.push({ id: chainIdOf(chain[0]), headNodeId: chain[0], tailNodeId: chain[chain.length - 1], nodeIds: chain, count: chain.length });
-  }
-  return list;
-}
-
-function redrawChainFor(chainId) {
-  const ch = chainById(chainId);
-  if (!ch) return;
-  const r = chainRect(ch);
-  if (!r) return;
-  state.chainRects.set(chainId, r);
-  if (chainIsCollapsed(ch)) {
-    const el = state.chainBoxEls ? state.chainBoxEls.get(chainId) : null;
-    if (el && el.setAttribute) el.setAttribute("transform", `translate(${r.x},${r.y})`);
-    return;
-  }
-  const box = chainFrameRect(ch);
-  if (!box) return;
-  const frame = state.chainFrameEls ? state.chainFrameEls.get(chainId) : null;
-  if (frame && frame.setAttribute) {
-    frame.setAttribute("x", box.x);
-    frame.setAttribute("y", box.y);
-    frame.setAttribute("width", box.w);
-    frame.setAttribute("height", box.h);
-  }
-  const label = state.chainFrameLabelEls ? state.chainFrameLabelEls.get(chainId) : null;
-  if (label && label.setAttribute) {
-    label.setAttribute("x", box.x + 10);
-    label.setAttribute("y", box.y - 6);
-  }
-}
 
 // ---------------- 右键菜单 ----------------
 
@@ -1173,74 +522,15 @@ function openChainMenu(chainId, ev) {
 }
 
 /** 当前选中状态的一句话指纹：用来判断「画布上画的是不是就是这个选中」。 */
-function selectionKey() {
-  const ids = [...state.selectedIds].sort().join(",");
-  return [state.selected || "", state.selectedEdge || "", state.selectedGroup || "", state.selectedChain || "", ids].join("|");
-}
 
 /** 焦点节点（含它所在的收纳组）：与它相连的线亮起来，其余压暗。 */
-function touchesFocus(id) {
-  const focus = state.selected;
-  if (!focus) return false;
-  if (id === focus) return true;
-  const g = (state.nodesById.get(focus) || {}).groupId;
-  if (!g || !state.collapsedIds || !state.collapsedIds.has(g)) return false;
-  return ((state.nodesById.get(id) || {}).groupId || null) === g;
-}
 
 /** 节点卡片 / 连线的 class：渲染和「只上色不重绘」共用同一套，别写两份规则。 */
-function nodeClass(n) {
-  return "node-box" + (n.compact ? " compact" : "") +
-    (state.selectedIds.has(n.id) ? " picked" : "") + (state.selected === n.id ? " focus" : "");
-}
-
-function edgeClass(e) {
-  const gated = e && e.gate === "human" && !e.gateConfirmedBy;
-  let cls = "edge" + (gated ? " edge-gated" : "");
-  if (state.selectedEdge) cls += e && e.id === state.selectedEdge ? " edge-focus edge-selected" : " edge-dim";
-  else if (state.selected && e) cls += (touchesFocus(e.fromNodeId) || touchesFocus(e.toNodeId)) ? " edge-focus" : " edge-dim";
-  return cls;
-}
 
 /**
  * 只改选中态的高亮/压暗，不重建 DOM。
  * 节点可能上千，点一下整图重绘就是「点一下卡一下」的根源——选中这种纯视觉变化不该付构图的代价。
  */
-function paintSelection() {
-  for (const [id, el] of state.nodeEls || []) {
-    const n = state.nodesById.get(id);
-    if (!el || !el.setAttribute || !n) continue;
-    el.setAttribute("class", nodeClass(n));
-  }
-  for (const [id, el] of state.edgeEls || []) {
-    const e = state.edgesById.get(id);
-    if (!el || !el.setAttribute || !e) continue;
-    el.setAttribute("class", edgeClass(e));
-  }
-  const unmarkAll = (map) => {
-    for (const el of (map ? map.values() : [])) {
-      if (el && el.setAttribute) el.setAttribute("class", (el.getAttribute("class") || "").replace(/\s*picked/g, ""));
-    }
-  };
-  const mark = (map, id) => {
-    const el = map && map.get(id);
-    if (el && el.setAttribute) el.setAttribute("class", (el.getAttribute("class") || "").replace(/\s*picked/g, "") + " picked");
-  };
-  unmarkAll(state.groupEls); unmarkAll(state.groupEdgeEls); unmarkAll(state.pillEls);
-  unmarkAll(state.chainBoxEls); unmarkAll(state.chainFrameEls); unmarkAll(state.chainFrameLabelEls);
-  if (state.selectedGroup) { mark(state.groupEls, state.selectedGroup); mark(state.groupEdgeEls, state.selectedGroup); mark(state.pillEls, state.selectedGroup); }
-  if (state.selectedChain) { mark(state.chainBoxEls, state.selectedChain); mark(state.chainFrameEls, state.selectedChain); mark(state.chainFrameLabelEls, state.selectedChain); }
-  state.paintedKey = selectionKey();
-}
-
-function setSelection(ids) {
-  state.selectedIds = new Set(ids);
-  state.selectedEdge = null;
-  state.selectedGroup = null;
-  state.selectedChain = null;
-  if (ids.length === 1) selectNode(ids[0]);
-  else if (ids.length === 0) { state.selected = null; $("sideBody").innerHTML = ""; }
-}
 
 // ---------------- 预设（模板库） ----------------
 
@@ -1725,24 +1015,6 @@ async function removeEdge(edgeId) {
   return r;
 }
 
-function toggleSelection(nodeId) {
-  const next = new Set(state.selectedIds);
-  if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId);
-  setSelection([...next]);
-  paintSelection();
-}
-
-function nodesInRect(rect) {
-  const out = [];
-  for (const n of state.graph?.nodes || []) {
-    if (state.hiddenIds && state.hiddenIds.has(n.id)) continue;   // 收纳起来的成员不参与框选
-    const p = state.positions.get(n.id);
-    if (!p) continue;
-    if (p.x < rect.x + rect.w && p.x + p.w > rect.x && p.y < rect.y + rect.h && p.y + p.h > rect.y) out.push(n.id);
-  }
-  return out;
-}
-
 // ---------------- 拖动 / 连线 / 框选 / 平移 ----------------
 
 function moveNodeTo(nodeId, x, y) {
@@ -2163,15 +1435,6 @@ function updateMarquee(ev) {
     m.el.setAttribute("width", r.w);
     m.el.setAttribute("height", r.h);
   }
-}
-
-function normRect(a, b) {
-  return {
-    x: Math.min(a.x, b.x),
-    y: Math.min(a.y, b.y),
-    w: Math.abs(a.x - b.x),
-    h: Math.abs(a.y - b.y)
-  };
 }
 
 function endMarquee() {
