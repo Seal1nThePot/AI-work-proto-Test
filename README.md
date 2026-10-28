@@ -58,7 +58,8 @@ test\
     索引.md                     每个文件夹一份，由 tools/gen-index.mjs 从文件头生成，勿手改
     wwwroot\                   index.html（脚本装配单）+ app.js（手写 SVG 画布）+ style.css
       src\                     已切出的分段脚本（顺序即依赖）：
-                                00-const / 01-state / 02-dom / 03-api / 10-geo / 11-layout / 12-chain / 13-group / 30-select
+                                00-const / 01-state / 02-dom / 03-api / 10-geo / 11-layout / 12-chain /
+                                13-group / 20-render / 21-render-diff / 30-select
   verify\
     run-acceptance.ps1         接口验收（160 项）
     run-ui-smoke.ps1           页面验收（192 项）+ ui-smoke.mjs（DOM 桩）
