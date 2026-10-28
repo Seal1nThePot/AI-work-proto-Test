@@ -1,0 +1,16 @@
+# 统一换行符：源码 LF，Windows 脚本 CRLF，图片按二进制
+* text=auto
+*.js text eol=lf
+*.mjs text eol=lf
+*.ts text eol=lf
+*.md text eol=lf
+*.cs text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.csproj text eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.gz binary
+*.db binary

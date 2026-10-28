@@ -136,7 +136,10 @@ for (dir of DIRS) {
   const text = L.join('\n');
   const target = join(abs, '索引.md');
   const old = existsSync(target) ? readFileSync(target, 'utf8') : null;
-  if (old !== text) {
+  // 工作树可能是 CRLF（core.autocrlf=true / checkout 重写），比对前统一换行符，
+  // 否则每次 checkout 后 --check 都会误报 INDEX-STALE。
+  const same = old !== null && old.replace(/\r\n/g, '\n') === text;
+  if (!same) {
     stale.push(relative(ROOT, target));
     if (!CHECK) { writeFileSync(target, text, 'utf8'); written++; }
   }
