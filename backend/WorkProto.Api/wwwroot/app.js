@@ -1,7 +1,7 @@
 // ────────── app.js ──────────「画布主逻辑（尚未切走的部分）」
-// 用途: 画布剩余逻辑：表单、写操作、手势、装配（逐阶段继续切到 src\）
+// 用途: 画布剩余逻辑：手势、菜单、键盘、绑定与启动
 // 暴露: （全部顶层函数与 state 的消费方）
-// 依赖: src/00-const.js … src/45-cycle.js（见 index.html 顺序）
+// 依赖: src/00-const.js … src/60-write.js（见 index.html 顺序）
 // 被依赖: index.html
 
 /** 组的先后：按跨组的 transfer 边做拓扑排序（环就按 seq 接在后面），未分组节点当最后一列。 */
@@ -721,375 +721,37 @@ function removeTempLink() {
   if (line && line.remove) line.remove();
 }
 
-// ---------------- 写操作 ----------------
-
-async function saveNodePosition(nodeId, x, y) {
-  const rx = Math.round(x);
-  const ry = Math.round(y);
-  const r = await api(`/api/nodes/${encodeURIComponent(nodeId)}/move`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ x: rx, y: ry })
-  });
-  if (r.ok) {
-    const n = (state.graph?.nodes || []).find((x) => x.id === nodeId);
-    if (n) { n.posX = r.body.posX; n.posY = r.body.posY; }
-  } else {
-    showToast(`位置没存下：${r.body?.error || r.status}`, false);
-  }
-  return r;
-}
-
 /** 批量落坐标：框选一起拖时只发一次请求。 */
-async function saveLayout(ids) {
-  if (!state.taskId || !ids.length) return { ok: true, body: null };
-  const nodes = ids
-    .map((id) => {
-      const p = state.positions.get(id);
-      return p ? { id, x: Math.round(p.x), y: Math.round(p.y) } : null;
-    })
-    .filter(Boolean);
-  if (!nodes.length) return { ok: true, body: null };
-  const r = await api(`/api/tasks/${encodeURIComponent(state.taskId)}/layout`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ nodes })
-  });
-  if (r.ok) {
-    for (const it of nodes) {
-      const n = (state.graph?.nodes || []).find((x) => x.id === it.id);
-      if (n) { n.posX = it.x; n.posY = it.y; }
-    }
-    // 本地已经和库里一致了：把「上次渲染的图」同步一下，否则轮询会以为图变了，
-    // 拖完 5 秒内必来一次整图重绘（节点上千就是 150ms 的卡顿）
-    syncGraphJson();
-  } else {
-    showToast(`位置没存下：${r.body?.error || r.status}`, false);
-  }
-  return r;
-}
-
-async function connectNodes(fromId, toId, kind, fromPort = 0, toPort = 0) {
-  if (!state.taskId) return { ok: false, body: { error: "no-task" } };
-  // 先把线画上再等服务端：等 POST 回来才画的话，节点一多就要等三四百毫秒
-  const k = kind || "transfer";
-  const tmpId = `tmp:${fromId}->${toId}:${Date.now()}`;
-  insertEdgeLocally({ id: tmpId, fromNodeId: fromId, toNodeId: toId, kind: k, fromPort, toPort, gate: "auto" });
-  const r = await api(`/api/tasks/${encodeURIComponent(state.taskId)}/edges`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ from: fromId, to: toId, kind: k, fromPort, toPort })
-  });
-  if (r.ok) {
-    removeEdgeLocally(tmpId);
-    const parts = [`已连线 ${nodeTitle(fromId)} → ${nodeTitle(toId)}（${k}）`];
-    if (k === "transfer") {
-      parts.push(r.body.groupCreated ? `新建输入规则组（all，${r.body.groupItems.length} 条入边）` : `并入已有规则组（${r.body.groupItems.length} 条入边）`);
-      if ((r.body.activated || []).length) parts.push(`已起步：${r.body.activated.map((id) => nodeTitle(id)).join("、")}`);
-    } else if (r.body.cycle) {
-      parts.push(`接入循环区 ${r.body.cycle.regionKey}（上限 ${r.body.cycle.limit}）`);
-    }
-    showToast(parts.join("；"), true);
-    insertEdgeLocally(r.body.edge, r.body.activated || []);
-    scheduleSilentSync();
-  } else {
-    removeEdgeLocally(tmpId);
-    showToast(`${r.body?.error || r.status}：${r.body?.message || "连线失败"}`, false);
-  }
-  return r;
-}
 
 /** 把本地临时画上去的那条线撤掉（服务端说不行时）。 */
-function removeEdgeLocally(edgeId) {
-  if (!state.graph) return;
-  state.graph.edges = state.graph.edges.filter((e) => e.id !== edgeId);
-  if (state.edgesById) state.edgesById.delete(edgeId);
-  if (state.edgeEls) state.edgeEls.delete(edgeId);
-  const vp = viewportEl();
-  if (vp && vp.querySelector) {
-    for (const sel of [`[data-edge="${edgeId}"]`, `[data-edge-hit="${edgeId}"]`]) {
-      const el = vp.querySelector(sel);
-      if (el && el.remove) el.remove();
-    }
-  }
-}
 
 /**
  * 本地插一条线：只往现有 DOM 里加「线 + 命中带」两个元素，不整图重绘。
  * 节点上千时，建线后重取整图重绘要 0.5–1 秒，全卡在这一次重绘上。
  */
-function insertEdgeLocally(edge, activated = []) {
-  if (!edge || !state.graph) return;
-  const g = state.graph;
-  if (g.edges.some((e) => e.id === edge.id)) return;
-  g.edges.push(edge);
-  if (state.edgesById) state.edgesById.set(edge.id, edge);
-  for (const nodeId of [edge.fromNodeId, edge.toNodeId]) {
-    if (!state.incident) state.incident = new Map();
-    if (!state.incident.has(nodeId)) state.incident.set(nodeId, new Set());
-    state.incident.get(nodeId).add(edge.id);
-  }
-  // 起步的节点在本地也要变「进行中」，否则下一次轮询会因为对不上而整图重绘
-  for (const id of activated) {
-    const n = state.nodesById && state.nodesById.get(id);
-    if (n) n.status = "active";
-  }
-  const from = state.positions.get(edge.fromNodeId);
-  const to = state.positions.get(edge.toNodeId);
-  const vp = viewportEl();
-  if (!from || !to || !vp || !vp.insertAdjacentHTML) return;
-  const isLoop = edge.kind === "loop";
-  const gated = edge.gate === "human" && !edge.gateConfirmedBy;
-  const d = edgePath(from, to, edge);
-  const stroke = gated ? "#f97316" : isLoop ? "#7c3aed" : "#94a3b8";
-  const dash = isLoop ? 'stroke-dasharray="7 5"' : gated ? 'stroke-dasharray="3 4"' : "";
-  vp.insertAdjacentHTML("beforeend",
-    `<path class="edge" data-edge="${esc(edge.id)}" d="${d}" fill="none" stroke="${stroke}" stroke-width="${isLoop ? 2 : 1.5}" ${dash} marker-end="url(#${isLoop ? "arrowLoop" : "arrow"})"></path>` +
-    `<path class="edge-hit" data-edge-hit="${esc(edge.id)}" d="${d}" fill="none" stroke="transparent" stroke-width="16" pointer-events="stroke"></path>`);
-  const added = vp.querySelector ? vp.querySelector(`[data-edge="${edge.id}"]`) : null;
-  if (added && state.edgeEls) state.edgeEls.set(edge.id, added);
-  paintSelection();
-  syncGraphJson();
-}
 
 /**
  * 本地改完图（拖坐标、插线、起步状态）之后，把「上次渲染的图」也同步成现在这样。
  * 不做这一步，轮询会把「本地已经画好的变化」当成新变化，再来一次整图重绘。
  */
-function syncGraphJson() {
-  state.graphJson = state.graph ? JSON.stringify(state.graph) : null;
-}
 
 /** 静默校准：攒一下再拉一次图（JSON 没变就不会重绘；变了也只是补上状态差异）。 */
-function scheduleSilentSync(delay = 700) {
-  if (state.silentTimer) clearTimeout(state.silentTimer);
-  state.silentTimer = setTimeout(() => { state.silentTimer = null; loadGraph(); }, delay);
-}
-
-async function createTask(title, goalLine) {
-  const r = await api("/api/tasks", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, goalLine, nodes: [], edges: [], groups: [], cycles: [] })
-  });
-  if (r.ok) {
-    state.taskId = r.body.id;
-    state.selected = null;
-    state.selectedIds = new Set();
-    state.fittedFor = null;
-    await refresh();
-    showToast(`已建任务「${title}」（${r.body.id}）：双击空白处开始加节点`, true);
-  } else {
-    showToast(`${r.body?.error || r.status}：${r.body?.message || "建任务失败"}`, false);
-  }
-  return r;
-}
-
-// ---------------- 表单 ----------------
-
-function closeForm() {
-  $("formHost").innerHTML = "";
-  state.pendingPos = null;
-}
-
-function showFormResult(ok, html) {
-  const box = $("formResult");
-  if (!box) return;
-  box.className = "formResult " + (ok ? "ok" : "err");
-  box.innerHTML = html;
-}
-
-function openTaskForm() {
-  $("formHost").innerHTML = `
-  <div class="form">
-    <div class="formhead"><b>新建任务</b><button type="button" id="closeForm">关闭</button></div>
-    <label>标题（必填）<input id="tTitle" maxlength="120" placeholder="例如：把周报写出来" /></label>
-    <label>一行目标<input id="tGoal" placeholder="例如：给出可复核的三条结论" /></label>
-    <div class="actions"><button type="button" class="primary" id="submitTask">建任务</button></div>
-    <div id="formResult" class="formResult"></div>
-  </div>`;
-  $("closeForm").onclick = closeForm;
-  $("submitTask").onclick = submitTask;
-  $("tTitle").focus();
-}
-
-async function submitTask() {
-  const title = $("tTitle").value.trim();
-  if (!title) { showFormResult(false, "标题必填"); return; }
-  $("submitTask").disabled = true;
-  const r = await createTask(title, $("tGoal").value.trim());
-  $("submitTask").disabled = false;
-  if (r.ok) { $("tTitle").value = ""; $("tGoal").value = ""; showFormResult(true, `已建任务「${esc(title)}」，双击空白处加第一个节点`); }
-  else showFormResult(false, `<b>${esc(r.body?.error || r.status)}</b>：${esc(r.body?.message || "")}`);
-}
-
-function openNodeForm() {
-  if (!state.taskId) { $("formHost").innerHTML = `<div class="form"><div class="formResult err">先新建或选一个任务</div></div>`; return; }
-  const at = state.pendingPos;
-  $("formHost").innerHTML = `
-  <div class="form">
-    <div class="formhead"><b>新建节点</b><button type="button" id="closeForm">关闭</button></div>
-    ${at ? `<div class="muted">画布位置：(${at.x}, ${at.y})</div>` : `<div class="muted">位置：建好后拖到想要的地方</div>`}
-    <label>标题（必填，≤120 字）<input id="fTitle" maxlength="120" placeholder="例如：素材收集" /></label>
-    <label>一行目标<input id="fGoal" placeholder="例如：收齐三份可用材料" /></label>
-    <label>类型
-      <select id="fKind">
-        <option value="work">work · 干活</option>
-        <option value="review_auto">review_auto · 程序/审核者按规则判</option>
-        <option value="review_human">review_human · 人点头</option>
-      </select>
-    </label>
-    <label>循环区（可选，要连回边才需要）<input id="fRegion" placeholder="例如：R1" /></label>
-    <label>接线口（1–12，默认各 1 个）
-      <span class="portsRow">进 <input id="fInPorts" type="number" min="1" max="12" value="1" /> 出 <input id="fOutPorts" type="number" min="1" max="12" value="1" /></span>
-    </label>
-    <div class="actions"><button type="button" class="primary" id="submitNode">建节点</button></div>
-    <div id="formResult" class="formResult"></div>
-  </div>`;
-  $("closeForm").onclick = closeForm;
-  $("submitNode").onclick = submitNode;
-  $("fTitle").focus();
-}
 
 /** 双击空白：把落点坐标交给节点表单（中心对齐到鼠标）。负坐标照收，画布没边。 */
-function requestNodeAt(x, y) {
-  state.pendingPos = { x: Math.round(x - NODE_W / 2), y: Math.round(y - NODE_H / 2) };
-  openNodeForm();
-  return state.pendingPos;
-}
 
 /** 双击空白＝直接建一个默认节点（不弹表单），建完选中它、把右栏名字框聚焦好让人改。 */
-async function quickAddNode(worldX, worldY, title) {
-  if (!state.taskId) {
-    showToast("先新建或选一个任务，再双击空白建节点", false);
-    return { ok: false, status: 0, body: { error: "no-task" } };
-  }
-  const seq = (state.graph?.nodes?.length || 0) + 1;
-  const body = {
-    title: (title || `新节点 ${seq}`).trim(),
-    goalLine: "",
-    kind: "work",
-    x: Math.round(worldX - NODE_W / 2),
-    y: Math.round(worldY - NODE_H / 2)
-  };
-  const r = await api(`/api/tasks/${encodeURIComponent(state.taskId)}/nodes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  if (!r.ok) {
-    showToast(`${r.body?.error || r.status}：${r.body?.message || "建节点失败"}`, false);
-    return r;
-  }
-  const n = r.body.node;
-  state.pendingPos = null;
-  await refresh();
-  await selectNode(n.id);
-  paintSelection();
-  focusProps();
-  showToast(`已建节点「${n.title}」——在右栏改名字和目标`, true);
-  return r;
-}
 
 /** 选中节点后把右栏「标题」输入框聚焦（双击建节点之后就能直接改名）。 */
 
 /** 选中节点后改属性：标题 / 一行目标 / 类型 / 循环区。 */
-async function saveNodeProps(nodeId) {
-  const payload = {
-    title: $("nTitle") ? $("nTitle").value : undefined,
-    goalLine: $("nGoal") ? $("nGoal").value : undefined,
-    kind: $("nKind") ? $("nKind").value : undefined
-  };
-  const r = await api(`/api/nodes/${encodeURIComponent(nodeId)}/props`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  const box = $("propsResult");
-  if (r.ok) {
-    const changed = r.body.changed || [];
-    if (box) {
-      box.className = "formResult ok";
-      box.innerHTML = changed.length ? `已保存：${esc(changed.join("；"))}` : "没有改动";
-    }
-    await refresh();
-    await selectNode(nodeId);
-    paintSelection();
-    showToast(changed.length ? `节点已更新（${changed.length} 项）` : "没有改动", true);
-  } else {
-    if (box) {
-      box.className = "formResult err";
-      box.innerHTML = `<b>${esc(r.body?.error || r.status)}</b>：${esc(r.body?.message || "改属性失败")}`;
-    }
-    showToast(`${r.body?.error || r.status}：${r.body?.message || "改属性失败"}`, false);
-  }
-  return r;
-}
 
 /** 删节点（守卫在后端：只删未起步且无连线的 pending）。 */
-async function deleteNode(nodeId) {
-  const n = state.nodesById.get(nodeId);
-  const r = await api(`/api/nodes/${encodeURIComponent(nodeId)}`, { method: "DELETE" });
-  if (r.ok) {
-    showToast(`已删节点「${n ? n.title : nodeId}」`, true);
-    setSelection([]);
-    await refresh();
-  } else {
-    showToast(`${r.body?.error || r.status}：${r.body?.message || "删不掉"}`, false);
-  }
-  return r;
-}
 
 /** 单个节点收纳：0 完整 / 1 仅标题 / 2 仅关键字（纯看图状态）。 */
-async function setNodeCompact(nodeId, level) {
-  const r = await api(`/api/nodes/${encodeURIComponent(nodeId)}/compact`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ level })
-  });
-  if (r.ok) {
-    showToast(level ? `「${r.body.title}」已收纳为${level === 2 ? "仅关键字" : "仅标题"}` : `「${r.body.title}」已展开`, true);
-    await refresh();
-  } else {
-    showToast(`${r.body?.error || r.status}：${r.body?.message || "收纳失败"}`, false);
-  }
-  return r;
-}
 
 /** 把选中的几个节点圈成一个节点组（纯视觉，不影响门与执行）。 */
-async function createNodeGroup(ids, title) {
-  if (!state.taskId) return { ok: false, status: 0, body: { error: "no-task" } };
-  const r = await api(`/api/tasks/${encodeURIComponent(state.taskId)}/node-groups`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title: title || "", nodeIds: ids })
-  });
-  if (r.ok) {
-    showToast(`已建节点组「${r.body.title}」：${r.body.nodeIds.length} 个节点（只是画布分组，不影响执行）`, true);
-    setSelection([]);
-    await refresh();
-  } else {
-    showToast(`${r.body?.error || r.status}：${r.body?.message || "建组失败"}`, false);
-  }
-  return r;
-}
 
 /** 删节点组：withNodes=false 只解散（节点全留）；true 连节点一起删（组里有一个删不起就整批不动）。 */
-async function deleteNodeGroup(groupId, withNodes) {
-  const title = groupTitle(groupId);
-  const url = `/api/node-groups/${encodeURIComponent(groupId)}${withNodes ? "?withNodes=true" : ""}`;
-  const r = await api(url, { method: "DELETE" });
-  if (r.ok) {
-    showToast(withNodes
-      ? `已删除节点组「${title}」连同 ${r.body.nodesDeleted} 个节点`
-      : `已解散节点组「${title}」，${r.body.released} 个节点留着`, true);
-    setSelection([]);
-    await refresh();
-  } else {
-    showToast(`${r.body?.error || r.status}：${r.body?.message || "删组失败"}`, false);
-  }
-  return r;
-}
 
 /** 收纳/展开一个组（纯看图状态，落库只为刷新后还是原样）。 */
 
@@ -1100,102 +762,6 @@ async function deleteNodeGroup(groupId, withNodes) {
 /** 收起/摊开一条同向链：纯前端看法，改的是内存里的集合，接口一个都不调。 */
 
 /** 右键「同向链收成一块」：给链上任意一节，收它所在的那一条。 */
-
-async function submitNode() {
-  const title = $("fTitle").value.trim();
-  if (!title) { showFormResult(false, "标题必填（一句白话，别写代号）"); return; }
-  const body = { title, goalLine: $("fGoal").value.trim(), kind: $("fKind").value };
-  const region = $("fRegion").value.trim();
-  if (region) body.cycleRegion = region;
-  const inPorts = Number($("fInPorts").value || 1);
-  const outPorts = Number($("fOutPorts").value || 1);
-  if (inPorts !== 1 || outPorts !== 1) { body.inPorts = inPorts; body.outPorts = outPorts; }
-  if (state.pendingPos) { body.x = state.pendingPos.x; body.y = state.pendingPos.y; }
-
-  $("submitNode").disabled = true;
-  const r = await api(`/api/tasks/${encodeURIComponent(state.taskId)}/nodes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  $("submitNode").disabled = false;
-
-  if (r.ok) {
-    const n = r.body.node;
-    showFormResult(true, `已建节点「${esc(n.title)}」，排在第 ${n.seq} 个（${esc(n.id)}）` +
-      (r.body.hint ? `<div class="muted">提示：${esc(r.body.hint)}</div>` : ""));
-    $("fTitle").value = "";
-    $("fGoal").value = "";
-    $("fInPorts").value = "1";
-    $("fOutPorts").value = "1";
-    state.pendingPos = null;
-    state.selected = n.id;
-    await refresh();
-  } else {
-    showFormResult(false, `<b>${esc(r.body?.error || r.status)}</b>：${esc(r.body?.message || "提交失败")}`);
-  }
-  return r;
-}
-
-function openEdgeForm(prefillFrom) {
-  if (!state.taskId) { $("formHost").innerHTML = `<div class="form"><div class="formResult err">先新建或选一个任务</div></div>`; return; }
-  const nodes = state.graph?.nodes || [];
-  $("formHost").innerHTML = `
-  <div class="form">
-    <div class="formhead"><b>新建连线</b><button type="button" id="closeForm">关闭</button></div>
-    <label>起点（材料从哪来）<select id="eFrom">${nodeOptions(prefillFrom || state.selected)}</select></label>
-    <label>起点出线口<select id="eFromPort"></select></label>
-    <label>终点（材料给谁）<select id="eTo">${nodeOptions(null)}</select></label>
-    <label>终点进线口<select id="eToPort"></select></label>
-    <label>类型
-      <select id="eKind">
-        <option value="transfer">transfer · 传递（接材料 / 等上游做完）</option>
-        <option value="loop">loop · 回边（进下一轮）</option>
-      </select>
-    </label>
-    <div class="muted">也可以直接在图上右键按住起点拖到终点，或从出线口拖出来。按住 Shift 是回边。</div>
-    <div class="actions" style="margin-top:8px"><button type="button" class="primary" id="submitEdge">连线</button></div>
-    <div id="formResult" class="formResult"></div>
-  </div>`;
-  $("closeForm").onclick = closeForm;
-  $("submitEdge").onclick = submitEdge;
-  fillPortSelect("eFromPort", $("eFrom").value, "out");
-  fillPortSelect("eToPort", $("eTo").value, "in");
-  $("eFrom").onchange = () => fillPortSelect("eFromPort", $("eFrom").value, "out");
-  $("eTo").onchange = () => fillPortSelect("eToPort", $("eTo").value, "in");
-  if (!nodes.length) showFormResult(false, "这个任务还没有节点，先建节点再连线");
-}
-
-function fillPortSelect(selectId, nodeId, side) {
-  const box = $(selectId);
-  if (!box) return;
-  const p = state.positions.get(nodeId);
-  const count = p ? (side === "in" ? p.inPorts || 1 : p.outPorts || 1) : 1;
-  const items = [];
-  for (let i = 0; i < count; i++) items.push(`<option value="${i}">第 ${i + 1} 个${count === 1 ? "（唯一）" : ""}</option>`);
-  box.innerHTML = items.join("");
-}
-
-async function submitEdge() {
-  const from = $("eFrom").value;
-  const to = $("eTo").value;
-  const kind = $("eKind").value;
-  if (!from || !to) { showFormResult(false, "起点和终点都要选"); return; }
-  const fromPort = Number($("eFromPort")?.value || 0);
-  const toPort = Number($("eToPort")?.value || 0);
-  $("submitEdge").disabled = true;
-  const r = await connectNodes(from, to, kind, fromPort, toPort);
-  $("submitEdge").disabled = false;
-  if (r.ok) {
-    await openEdgeForm(from);
-    showFormResult(true, "已连线（规则组与起步情况见上方提示）");
-  } else {
-    const waiting = r.body?.details?.waitingOn || [];
-    showFormResult(false, `<b>${esc(r.body?.error || r.status)}</b>：${esc(r.body?.message || "提交失败")}` +
-      (waiting.length ? `<ul>${waiting.map((w) => `<li>${esc(w.edgeId || "-")} · ${esc(w.reason)}</li>`).join("")}</ul>` : ""));
-  }
-  return r;
-}
 
 // ---------------- 事件接线 ----------------
 
