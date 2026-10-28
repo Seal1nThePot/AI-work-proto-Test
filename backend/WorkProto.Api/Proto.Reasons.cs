@@ -37,4 +37,5 @@ public static class Reasons
     public const string NodeGroupNotFound = "node-group-not-found";
     public const string NodeGroupNeedsTwo = "node-group-needs-two";
     public const string NodeGroupNotDeletable = "node-group-not-deletable";
+    public const string NodeAlreadyGrouped = "node-already-grouped";
 }

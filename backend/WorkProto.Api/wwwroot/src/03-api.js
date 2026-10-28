@@ -25,7 +25,10 @@ async function loadTasks() {
     : `<option value="">（还没有任务，点「＋ 新建任务」）</option>`;
   if (!state.tasks.length) { state.taskId = null; return; }
   const nextId = state.tasks.some((t) => t.id === state.taskId) ? state.taskId : state.tasks[0].id;
-  if (nextId !== state.taskId) state.overview = false;   // 换任务就退出总览
+  if (nextId !== state.taskId) {                         // 换任务就退出总览与视图图层
+    state.overview = false;
+    if (typeof resetViewState === "function") resetViewState();
+  }
   state.taskId = nextId;
   sel.value = state.taskId;
 }

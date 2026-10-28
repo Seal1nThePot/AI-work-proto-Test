@@ -1,6 +1,6 @@
 # WorkProto · SkyOps 阶段五「最小可行性验证」
 
-> 版本：**0.4.0**（2026-10-28，拆分前基线）· 仓库：<https://github.com/Seal1nThePot/AI-work-proto-Test>
+> 版本：**0.4.11**（2026-10-29，视图与组缓存）· 仓库：<https://github.com/Seal1nThePot/AI-work-proto-Test>
 
 **版本梯度**（主号 0.4 不动：接口、页面、验收一条不变，只搬文件/加功能）：
 
@@ -9,8 +9,9 @@
 | 0.4.0 | 基线 | 拆分前：ProtoStore 2117 行 / app.js 3237 行 / 40 端点 / 160+192 全绿 |
 | 0.4.1 ~ 0.4.8 | P1 ~ P8 | 每个阶段一个 patch，**行为不变，只有文件搬家** |
 | 0.4.9 | 拆分收口 | 结构完成（47 个运行时文件），四条不变式全过 |
-| 0.4.10 | `xuqiu.txt` 三条需求 | 功能版本（整理视图可复原 / 紧凑堆叠视图 / 连线接节点组） |
-| **0.5.0** | 全量 TypeScript | 26 个 `src\*.js` → `src\*.ts`，`tsc` 出 JS，脚本顺序模型与 `new Function` 注入不变；见拆分方案第十节 |
+| 0.4.10 | 需求澄清 | `xuqiu.txt` 三条需求对齐；连线接节点组顺延到 0.4.12 |
+| **0.4.11** | 视图与组缓存 | 组内相对布局缓存 / 按组整理 / 组视角 / 紧凑-堆叠视图 / 允许覆盖开关 / 视图图层 / Ctrl+Z；含属性自动同步、无级缩放与组名 LOD、空格复位、JSON 导入导出；见 [features.md 第十一节](docs/features.md) |
+| 0.5.0 | 全量 TypeScript | 30 个 `src\*.js` → `src\*.ts`，`tsc` 出 JS，脚本顺序模型与 `new Function` 注入不变；迁移交接见 `D:\CodexWork\handoff\2026-10-29-workproto-frontend-ts.md` |
 
 
 任务：`tsk_4c5221cf1e7a4a17a2302d3d4146d783` 阶段五（2026-10-28）
@@ -20,7 +21,7 @@
 
 把「任务节点 + 连线 + 门 + 循环 + 检查点」这套设计跑成可执行的闭环，用六条硬场景验收；页面上节点直接看得见**标题 + 一行目标 + 状态**，点开能读检查点原文和上次被拒原因，并且可以**在画布上直接建节点 / 画线 / 分组 / 声明循环 / 改属性**。
 
-跑通标准：**160 项接口断言 + 192 项页面断言**，全绿。
+跑通标准：**176 项接口断言 + 231 项页面断言 + 16 条拆分守恒**，全绿。
 
 ## 二、怎么跑
 
@@ -28,7 +29,7 @@
 启动点.bat                             # 一键：停旧进程 → 构建 → 起 5081 → 等健康 → 拉起浏览器新窗口
 启动点.bat chrome                      # 指定浏览器（edge / firefox 同理；默认 Edge，没装则 Chrome，再没有用系统默认）
 启动点.bat open                        # 服务已在跑，只把浏览器窗口拉起来
-启动点.bat check                       # 四条一起跑：build + 160 + 192 + 16 守恒
+启动点.bat check                       # 四条一起跑：build + 176 + 231 + 16 守恒
 启动点.bat stop                        # 停 5081（build 前也会自动停，避免 dll 被锁）
 pwsh -File verify\seed-demo.ps1        # 灌三个 demo 任务（服务没起会自动起）
 node verify\seed-complex.mjs           # 造一个 150 节点 / 233 连线的复杂任务（见第五节）
@@ -54,23 +55,23 @@ test\
     architecture.md            架构：进程、代码地图、数据层与提交口径、前端渲染、性能
     api.md                     接口契约：端点、图增量规则、门与放行、拒因码、钉死的五处
     features.md                功能：画布手势、拖动与吸附、节点/连线/组/循环、链、预设
-    acceptance.md              验收：160 + 192 项断言清单、性能证据、测不到的地方
+    acceptance.md              验收：176 + 231 项断言清单、性能证据、测不到的地方
   backend\WorkProto.Api\
     ProtoDb.cs                 库路径、连接与 PRAGMA、整份 DDL、老库补列与搬家
     Program.cs                 端点表
-    Proto.*.cs                 业务，15 个 partial 文件：Infra / Gate / Propagate / Lease / Lifecycle /
-                               Read / NodeWrite / Group / Edge / Template / Task / ApiResult / Reasons /
+    Proto.*.cs                 业务，16 个 partial 文件：Infra / Gate / Propagate / Lease / Lifecycle /
+                               Read / NodeWrite / Group / Edge / Template / Task / View / ApiResult / Reasons /
                                Contracts / Rows（逐文件职责见 backend\WorkProto.Api\索引.md）
     索引.md                     每个文件夹一份，由 tools/gen-index.mjs 从文件头生成，勿手改
     wwwroot\                   index.html（脚本装配单）+ style.css（无 app.js：逻辑全在 src\）
-      src\                     已切出的分段脚本（顺序即依赖）：
+      src\                     已切出的分段脚本（30 个，顺序即依赖）：
                                 00-const / 01-state / 02-dom / 03-api / 10-geo / 11-layout / 12-chain /
-                                13-group / 20-render / 21-render-diff / 30-select /
-                                40-panel-node … 45-cycle（右栏面板 6 个）/ 50-form-task 51-form-node 52-form-edge 60-write /
+                                13-group / 14-view / 15-arrange / 20-render / 21-render-diff / 30-select /
+                                40-panel-node … 45-cycle、46-panel-view（右栏面板 7 个）/ 50-form-task 51-form-node 52-form-edge 60-write /
                                 70-drag 71-pointer（手势）/ 80-menu 81-keyboard 90-bind 99-boot（装配）
   verify\
-    run-acceptance.ps1         接口验收（160 项）
-    run-ui-smoke.ps1           页面验收（192 项）+ ui-smoke.mjs（DOM 桩）
+    run-acceptance.ps1         接口验收（176 项）
+    run-ui-smoke.ps1           页面验收（231 项）+ ui-smoke.mjs（DOM 桩）
     run-perf.ps1               往返延迟对照（FULL vs NORMAL）
     run-canvas-bench.mjs       无头 Chrome 量渲染：DOM 计数 + render()/fitView() 耗时 + 截图
     wait-and-open.ps1          等 /api/health 200 再拉起浏览器新窗口（启动点.bat 调它）
@@ -79,7 +80,10 @@ test\
     seed-complex.mjs           150 节点 / 233 连线的复杂任务（8 组 + 循环区 + 择一 + k_of_n + 人工门控）
   docs\screenshot-150-nodes.png  那张复杂图的样子（run-canvas-bench.mjs 拍的）
   data\proto.db                demo 库（可删）
+
 ```
+
+**0.4.11 的「视图 ▾」**：顶部栏只有一个下拉，里面是「按组整理（选中组）/ 全局组整理」、组视角、紧凑/堆叠视图、允许覆盖（默认开）、保存视图图层、Ctrl+Z；右栏是图层列表（原视图 / 图层1 / 图层2…），同名更新、改名另存，可并存任意多个图层，每个图层带自己的显示模式标签。只存看法，不改节点与连线。
 
 ## 四、文档地图
 
@@ -103,17 +107,20 @@ node verify\run-canvas-bench.mjs      # 无头 Chrome 打开它，量渲染并�
 
 打开之后建议按这个顺序看：
 
-1. 点工具栏 **「按组整理」** —— 组按依赖排先后，组内按依赖分层（三合一、一进三的沙漏形状）；
-2. 点 **「总览」** —— 8 块编号牌排成格子，每块写着完成/进行/阻塞与循环轮次，组间只剩一条束线标 ×N；
-3. **双击一块牌** —— 只摊开这一组并自动聚焦，其余还是牌。
+1. 顶部 **「视图 ▾ → 全局组整理」** —— 组按依赖排先后，组内按依赖分层（三合一、一进三的沙漏形状）；
+2. **「视图 ▾ → 组视角」** —— 8 块编号牌排成格子，每块写着完成/进行/阻塞与循环轮次，组间只剩一条束线标 ×N；
+3. **「视图 ▾ → 紧凑/堆叠视图」** —— 全部节点变小组卡，组内按缓存压成紧凑块、组块靠近拼放；默认允许卡片覆盖，点「允许覆盖」关闭即碰撞展开；
+4. 在右栏把当前视图存成 **图层1 / 图层2…**（同名更新当前，改名另存新图层），不同图层可带不同显示模式，随时切回来；Ctrl+Z 撤销视图操作。
 
-![按组整理后的 150 节点](docs/screenshot-150-nodes.png)
+![全局组整理后的 150 节点](docs/screenshot-150-nodes.png)
 
-![总览：8 块牌 + 束线](docs/screenshot-overview.png)
+![组视角：8 块牌 + 束线](docs/screenshot-overview.png)
 
 ## 六、边界（别当成已实现）
 
-**没做的**：步骤表（A7）、选路失败替补与消歧、空产物完成依据、运行中改线与历史方案、多 agent 并行、审核规则集编辑、任务级 `final_review`/`submit`/`confirm`（原型只有节点级，任务级终审仍归 SkyOps）。
+**没做的**：步骤表（A7）、选路失败替补与消歧、空产物完成依据、多 agent 并行、审核规则集编辑、任务级 `final_review`/`submit`/`confirm`（原型只有节点级，任务级终审仍归 SkyOps）。
+
+**0.4.11 的边界**：视图图层只存「看法」（坐标、紧凑/堆叠/组视角、视口），不复制节点结构；JSON 导入导出只带当前视图与结构，不带执行进度；方案分支的结构化探索与「连线直接接节点组」顺延到 0.4.12。
 
 **只能走 REST 的**：认领、完成、检查点、择一、解除阻塞——页面没有按钮，验收脚本即此路径。
 

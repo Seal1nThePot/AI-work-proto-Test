@@ -461,8 +461,16 @@ Record 'S16 一个节点成不了组（node-group-needs-two）' ($r.status -eq 4
 $r = Api POST '/api/tasks/t-grp/node-groups' @{ title = '外人'; nodeIds = @('NG-2', 'NOPE') }
 Record 'S16 混进不存在的节点被拒（unknown-node）' ($r.status -eq 400 -and (Prop $r.body 'error') -eq 'unknown-node') "status=$($r.status) error=$(Prop $r.body 'error')"
 
+$r = Api POST "/api/node-groups/$groupId/nodes/NG-3"
+$r2 = Api POST "/api/node-groups/$groupId/nodes/NG-1"
+$g = (Api GET '/api/tasks/t-grp/graph').body
+$joined = $g.nodes | Where-Object { $_.id -eq 'NG-3' }
+Record 'S16 单个节点可加入已有组，重复加入同一组幂等' `
+    ($r.status -eq 200 -and (Prop $r.body 'changed') -eq $true -and $joined.groupId -eq $groupId -and $r2.status -eq 200 -and (Prop $r2.body 'changed') -eq $false) `
+    "join=$($r.status) group=$($joined.groupId) again=$($r2.status)/changed=$(Prop $r2.body 'changed')"
+
 $r = Api DELETE "/api/node-groups/$groupId"
-Record 'S16 删组只解散、报出释放了几个节点（200）' ($r.status -eq 200 -and (Prop $r.body 'released') -eq 2) "released=$(Prop $r.body 'released')"
+Record 'S16 删组只解散、报出释放了几个节点（200）' ($r.status -eq 200 -and (Prop $r.body 'released') -eq 3) "released=$(Prop $r.body 'released')"
 $g = (Api GET '/api/tasks/t-grp/graph').body
 Record 'S16 解散后组没了、三个节点都在、group_id 全清' `
     (@($g.nodeGroups).Count -eq 0 -and @($g.nodes).Count -eq 3 -and @($g.nodes | Where-Object { $_.groupId }).Count -eq 0) `
@@ -737,6 +745,63 @@ Record 'S22 撤销后没有循环了、组还在' (@($g.cycles).Count -eq 0 -and
     "cycles=$(@($g.cycles).Count) groups=$(@($g.nodeGroups).Count)"
 $r = Api DELETE "/api/node-groups/$lgGroup"
 Record 'S22 撤销循环后这个组就能删了（200）' ($r.status -eq 200) "status=$($r.status)"
+
+# ---------- S23 视图图层与组内相对布局缓存 ----------
+$r = Api POST '/api/tasks' @{
+    id = 't-viewlayer'; title = '视图图层测试'; goalLine = '验组缓存与图层';
+    nodes = @(
+        @{ id = 'VL-1'; title = '视图一'; seq = 1; x = 100; y = 100 },
+        @{ id = 'VL-2'; title = '视图二'; seq = 2; x = 420; y = 100 },
+        @{ id = 'VL-3'; title = '视图三'; seq = 3; x = 800; y = 100 }
+    );
+    edges = @(
+        @{ id = 'EVL-1'; from = 'VL-1'; to = 'VL-2'; kind = 'transfer' },
+        @{ id = 'EVL-2'; from = 'VL-2'; to = 'VL-3'; kind = 'transfer' }
+    );
+    groups = @(); cycles = @()
+}
+Record 'S23 建视图测试任务（201）' ($r.status -eq 201) "status=$($r.status)"
+$r = Api POST '/api/tasks/t-viewlayer/node-groups' @{ title = '视图组'; nodeIds = @('VL-1', 'VL-2') }
+$vgid = Prop $r.body 'id'
+Record 'S23 建组（201）' ($r.status -eq 201 -and $vgid) "group=$vgid"
+
+$r = Api POST "/api/node-groups/$vgid/layout" @{ nodes = @(@{ id = 'VL-1'; dx = 0; dy = 0 }, @{ id = 'VL-2'; dx = 300; dy = 40 }) }
+Record 'S23 保存组内相对坐标（200，回带 2 项）' ($r.status -eq 200 -and @($r.body.nodes).Count -eq 2) "status=$($r.status)"
+$g = (Api GET '/api/tasks/t-viewlayer/graph').body
+$vg = @($g.nodeGroups | Where-Object { $_.id -eq $vgid })[0]
+Record 'S23 组布局随图回带（相对坐标可读）' (@($vg.layout).Count -eq 2 -and $vg.layout[1].dx -eq 300) "layout=$($vg.layout | ConvertTo-Json -Compress)"
+$r = Api POST "/api/node-groups/$vgid/layout" @{ nodes = @(@{ id = 'NOT-IN-GROUP'; dx = 0; dy = 0 }) }
+Record 'S23 非组员写缓存被拒（400 unknown-node）' ($r.status -eq 400 -and (Prop $r.body 'error') -eq 'unknown-node') "status=$($r.status)"
+
+$r = Api GET '/api/tasks/t-viewlayer/view-layers'
+Record 'S23 新任务没有视图图层（200，空表）' ($r.status -eq 200 -and @($r.body.layers).Count -eq 0) "layers=$(@($r.body.layers).Count)"
+$payload = '{"version":1,"positions":{"VL-1":{"x":10,"y":20}},"groupLayouts":{},"groupView":false,"compactView":true,"allowOverlap":true,"viewport":{"scale":1,"tx":0,"ty":0}}'
+$r = Api POST '/api/tasks/t-viewlayer/view-layers' @{ name = '紧凑方案'; payload = $payload }
+$vlid = Prop $r.body 'id'
+Record 'S23 保存视图图层（201）' ($r.status -eq 201 -and $vlid) "layer=$vlid"
+$r = Api GET '/api/tasks/t-viewlayer/view-layers'
+Record 'S23 图层列表能列出（1 个，带 compact/stack 模式标签）' ($r.status -eq 200 -and @($r.body.layers).Count -eq 1 -and $r.body.layers[0].name -eq '紧凑方案' -and @($r.body.layers[0].modes) -contains 'compact' -and @($r.body.layers[0].modes) -contains 'stack') "layers=$(@($r.body.layers).Count) modes=$($r.body.layers[0].modes -join ',')"
+$r = Api GET "/api/view-layers/$vlid"
+Record 'S23 读单个图层（payload 原样回带，modes 可读）' ($r.status -eq 200 -and (Prop $r.body 'payload').compactView -eq $true -and (Prop $r.body 'payload').allowOverlap -eq $true -and @($r.body.modes) -contains 'stack') "status=$($r.status)"
+$r = Api POST "/api/view-layers/$vlid" @{ name = '改名后的图层' }
+Record 'S23 图层改名（200）' ($r.status -eq 200 -and $r.body.layer.name -eq '改名后的图层') "name=$($r.body.layer.name)"
+$r = Api POST '/api/tasks/t-viewlayer/view-layers' @{ name = '坏'; payload = '{not-json' }
+Record 'S23 非法 payload 被拒（400 bad-request）' ($r.status -eq 400 -and (Prop $r.body 'error') -eq 'bad-request') "status=$($r.status)"
+$r = Api POST '/api/tasks/t-viewlayer/view-layers' @{ name = '第二个'; payload = $payload }
+$vlid2 = Prop $r.body 'id'
+$r = Api DELETE "/api/view-layers/$vlid2"
+Record 'S23 删图层（200）' ($r.status -eq 200) "status=$($r.status)"
+$r = Api DELETE "/api/view-layers/$vlid2"
+Record 'S23 删不存在的图层（404）' ($r.status -eq 404) "status=$($r.status)"
+
+$r = Api POST '/api/tasks/t-viewlayer/view-layers' @{ payload = $payload }
+$cn1 = Prop $r.body 'name'
+Record 'S23 图层留空名按阿拉伯数字自动排（图层1）' ($r.status -eq 201 -and $cn1 -eq '图层1') "name=$cn1"
+$r = Api POST '/api/tasks/t-viewlayer/view-layers' @{ payload = $payload }
+$cn2 = Prop $r.body 'name'
+Record 'S23 第二个留空名接着排（图层2）' ($r.status -eq 201 -and $cn2 -eq '图层2') "name=$cn2"
+
+
 
 }
 finally {

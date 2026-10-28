@@ -25,6 +25,15 @@ function edgePath(from, to, edge) {
   const a = portPoint("out", from, edge.fromPort || 0, from.outPorts || 1);
   const b = portPoint("in", to, edge.toPort || 0, to.inPorts || 1);
   const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  // 小角度/短距离直接拉直线；只有偏得明显或两头离得远时才弯，避免每根线都像面条
+  const straightAngle = 14 * Math.PI / 180;
+  const straightDy = 18;
+  const shortDist = 60;
+  const dist = Math.hypot(dx, dy);
+  const angle = Math.atan2(Math.abs(dy), Math.max(0, dx));
+  if (dist <= shortDist || (dx > 0 && (Math.abs(dy) <= straightDy || angle <= straightAngle)))
+    return `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
   if (dx > 40) {
     const mid = (a.x + b.x) / 2;
     return `M ${a.x} ${a.y} C ${mid} ${a.y}, ${mid} ${b.y}, ${b.x} ${b.y}`;
@@ -96,6 +105,7 @@ function zoomAt(clientX, clientY, deltaY) {
   captureView();
   const vp = state.viewport;
   const v = state.view;
+  const wasLod = state.lodActive;
   const ux = clientX - v.left;
   const uy = clientY - v.top;
   const before = { x: (ux - vp.tx) / vp.scale, y: (uy - vp.ty) / vp.scale };
@@ -105,6 +115,8 @@ function zoomAt(clientX, clientY, deltaY) {
   vp.tx = ux - before.x * scale;
   vp.ty = uy - before.y * scale;
   applyViewport();
+  const nowLod = scale < LOD_GROUP_SCALE && !viewCompactView() && !viewGroupView() && (state.graph?.nodeGroups || []).length > 0;
+  if (nowLod || wasLod !== nowLod) render();   // 组名标签要按当前缩放反算字号
   return { scale: vp.scale, tx: vp.tx, ty: vp.ty, anchor: before };
 }
 
@@ -113,12 +125,19 @@ function zoomAt(clientX, clientY, deltaY) {
 function fitView() {
   const hidden = state.hiddenIds || new Set();
   const pts = [];
-  for (const [id, p] of state.positions) {
-    if (hidden.has(id)) continue;
-    pts.push(p);
+  if (state.lodActive) {
+    for (const grp of state.graph?.nodeGroups || []) {
+      const b = typeof groupBoxOf === "function" ? groupBoxOf(grp.id) : null;
+      if (b) pts.push({ x: b.x1, y: b.y1, w: b.x2 - b.x1, h: b.y2 - b.y1 });
+    }
+  } else {
+    for (const [id, p] of state.positions) {
+      if (hidden.has(id)) continue;
+      pts.push(p);
+    }
+    for (const pill of (state.pills || new Map()).values()) pts.push(pill);
+    for (const r of (state.chainRects || new Map()).values()) pts.push(r);
   }
-  for (const pill of (state.pills || new Map()).values()) pts.push(pill);
-  for (const r of (state.chainRects || new Map()).values()) pts.push(r);
   applyFit(pts);
 }
 
@@ -134,9 +153,11 @@ function applyFit(pts) {
   if (!svg) return;
   captureView();
   const v = state.view;
+  const wasLod = state.lodActive;
   if (!pts || !pts.length) {
     state.viewport = { scale: 1, tx: 20, ty: 20 };
     applyViewport();
+    if (wasLod) render();
     return;
   }
   const minX = Math.min(...pts.map((p) => p.x));
@@ -149,6 +170,8 @@ function applyFit(pts) {
   const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.min((v.width - pad * 2) / w, (v.height - pad * 2) / h, 1)));
   state.viewport = { scale, tx: pad - minX * scale, ty: pad - minY * scale };
   applyViewport();
+  const nowLod = scale < LOD_GROUP_SCALE && !viewCompactView() && !viewGroupView() && (state.graph?.nodeGroups || []).length > 0;
+  if (nowLod || wasLod !== nowLod) render();
 }
 
 function normRect(a, b) {

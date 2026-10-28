@@ -103,14 +103,14 @@ public static partial class Proto
         return r.Read() ? MapNode(r) : null;
     }
 
-    private sealed record NodeGroupRow(string Id, string TaskId, string Title, bool Collapsed);
+    private sealed record NodeGroupRow(string Id, string TaskId, string Title, bool Collapsed, string? Layout);
 
     private static List<NodeGroupRow> ReadNodeGroups(SqliteConnection c, string taskId)
     {
         var list = new List<NodeGroupRow>();
-        using var cmd = Q(c, "SELECT id,task_id,title,collapsed FROM node_groups WHERE task_id=@t ORDER BY created_at_utc", ("@t", taskId));
+        using var cmd = Q(c, "SELECT id,task_id,title,collapsed,layout_json FROM node_groups WHERE task_id=@t ORDER BY created_at_utc", ("@t", taskId));
         using var r = cmd.ExecuteReader();
-        while (r.Read()) list.Add(new NodeGroupRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetInt32(3) != 0));
+        while (r.Read()) list.Add(new NodeGroupRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetInt32(3) != 0, r.IsDBNull(4) ? null : r.GetString(4)));
         return list;
     }
 

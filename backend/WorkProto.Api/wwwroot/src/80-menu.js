@@ -64,7 +64,7 @@ function openNodeMenu(nodeId, ev) {
           onClick: () => collapseChain(chain.id, false)
         };
       }
-      const walk = chain.length >= 2 ? chain.nodeIds : walkChainLocal(nodeId);
+      const walk = chain && chain.length >= 2 ? chain.nodeIds : walkChainLocal(nodeId);
       return {
         label: walk.length >= 2 ? `同向链收成一块（${walk.length} 个）` : "同向链收成一块",
         hint: walk.length >= 2 ? "双击标题可摊开" : "同向上接不出第二个",
@@ -78,6 +78,16 @@ function openNodeMenu(nodeId, ev) {
       disabled: picked.length < 2,
       onClick: () => createNodeGroup(picked)
     },
+    (() => {
+      if (n.groupId) return null;
+      const target = nearestGroupForNode(nodeId);
+      if (!target) return null;
+      return {
+        label: `加入最近组「${cut(target.title, 12)}」`,
+        hint: target.distance < 0.5 ? "已在组框内 · G" : `距离 ${Math.round(target.distance)}px · G`,
+        onClick: () => addNodeToGroup(nodeId, target.id)
+      };
+    })(),
     n.groupId ? { label: "删除分组", hint: groupTitle(n.groupId), onClick: () => deleteNodeGroup(n.groupId, false) } : null,
     { label: "存成节点预设", hint: "以后到处套", onClick: () => saveNodeTemplate(nodeId) },
     { label: `删除节点「${cut(n.title, 12)}」`, hint: "只能删未起步且无连线", danger: true, onClick: () => deleteNode(nodeId) }

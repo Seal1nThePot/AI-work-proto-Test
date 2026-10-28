@@ -1,8 +1,8 @@
 // ────────── 11-layout.js ──────────「自动布局」
-// 用途: 自动整理：组按依赖排先后、组内分层摆块、总览排格子、整理/复原开关；只算坐标，落库另走 saveLayout
-// 暴露: autoDepths layout groupOrder groupLayered arrangePositions arrangeByGroups toggleOverview（内部 LOOSE_KEY/COL_PITCH/ROW_GAP/BAND）
+// 用途: 布局基元：依赖深度、端口位置、组序、组内分层（14-view 的整理/紧凑视图共用）
+// 暴露: autoDepths layout groupOrder groupLayered（内部 LOOSE_KEY/COL_PITCH/ROW_GAP/BAND）
 // 依赖: 00-const.js 01-state.js 10-geo.js
-// 被依赖: app.js（按组整理/总览按钮）
+// 被依赖: 14-view.js（整理与紧凑视图）、20-render.js（整图位置）
 
 // ---------------- 布局 ----------------
 
@@ -21,6 +21,7 @@ function autoDepths(graph) {
 }
 
 function layout(graph) {
+  if (typeof viewCompactView === "function" && viewCompactView()) return compactLayout(graph);
   const depth = autoDepths(graph);
   const columns = new Map();
   for (const n of graph.nodes) {
@@ -28,14 +29,16 @@ function layout(graph) {
     if (!columns.has(d)) columns.set(d, []);
     columns.get(d).push(n);
   }
+  const overlay = state.viewState ? state.viewState.positions : null;
   const pos = new Map();
   for (const d of [...columns.keys()].sort((a, b) => a - b)) {
     columns.get(d).sort((a, b) => a.seq - b.seq).forEach((n, i) => {
+      const vp = overlay ? overlay[n.id] : null;
       const hasPos = Number.isFinite(n.posX) && Number.isFinite(n.posY);
-      const level = n.compact || 0;
+      const level = typeof viewCompactLevel === "function" ? viewCompactLevel(n) : (n.compact || 0);
       pos.set(n.id, {
-        x: hasPos ? n.posX : 40 + d * (NODE_W + NODE_GAP_X),
-        y: hasPos ? n.posY : 60 + i * (NODE_H + NODE_GAP_Y),
+        x: vp ? vp.x : (hasPos ? n.posX : 40 + d * (NODE_W + NODE_GAP_X)),
+        y: vp ? vp.y : (hasPos ? n.posY : 60 + i * (NODE_H + NODE_GAP_Y)),
         w: level ? COMPACT_W : NODE_W,
         h: level ? COMPACT_H : NODE_H,
         inPorts: Math.max(1, n.inPorts || 1),
@@ -182,86 +185,4 @@ function groupLayered(list, edges) {
     width: cols * COL_PITCH + NODE_W - COL_PITCH,
     height: Math.max(...bandH.filter((h) => h > 0), NODE_H)
   };
-}
-
-/**
- * 自动整理：整张图只有一条「前后」主线——组按跨组依赖排出先后，一组一块、从左往右依次挨着放；
- * 组内同样从左往右（依赖分层），一条流走到底不折行。
- * 只算坐标，不碰任何语义；算完照常走 POST /tasks/{id}/layout 落库。
- */
-
-function arrangePositions(graph) {
-  const order = groupOrder(graph);
-  const buckets = new Map(order.map((k) => [k, []]));
-  for (const n of graph.nodes) {
-    const k = n.groupId || LOOSE_KEY;
-    if (!buckets.has(k)) buckets.set(k, []);
-    buckets.get(k).push(n);
-  }
-  const blocks = [];
-  for (const key of order) {
-    const list = buckets.get(key) || [];
-    if (!list.length) continue;
-    blocks.push({ key, block: groupLayered(list, graph.edges) });
-  }
-  const maxH = blocks.length ? Math.max(...blocks.map((b) => b.block.height)) : NODE_H;
-  const pos = new Map();
-  let x = 60;
-  const y0 = 160;
-  for (const { block } of blocks) {
-    const y = y0 + Math.round((maxH - block.height) / 2);   // 组块纵向居中对齐：出口接着下一个入口，看起来才是一条直线
-    for (const [id, p] of block.pos) {
-      pos.set(id, { x: Math.round(x + p.col * COL_PITCH), y: Math.round(y + p.y) });
-    }
-    x += block.width + 240;                                 // 块间留够：组框 + 标签都要地方
-  }
-  return pos;
-}
-
-/** 一键按组重排：先本地生效（图与渲染缓存同写，避免回弹），再落库。 */
-
-async function arrangeByGroups() {
-  const g = state.graph;
-  if (!g || !g.nodes.length) return;
-  const pos = arrangePositions(g);
-  for (const n of g.nodes) {
-    const p = pos.get(n.id);
-    if (!p) continue;
-    n.posX = p.x;
-    n.posY = p.y;
-  }
-  render();
-  fitView();
-  syncGraphJson();
-  const payload = { nodes: g.nodes.map((n) => ({ id: n.id, x: n.posX, y: n.posY })) };
-  const r = await api(`/api/tasks/${encodeURIComponent(g.task.id)}/layout`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  showToast(r.ok ? `已按组重排 ${payload.nodes.length} 个节点` : `整理后的坐标没存上：${r.body?.error || r.status}`, r.ok);
-}
-
-/** 总览：所有组收成牌、牌子按组的先后排成整齐的格子（组间线收拢成一条并标 ×N），再点一次全摊开。 */
-
-async function toggleOverview() {
-  const g = state.graph;
-  const groups = (g && g.nodeGroups) || [];
-  if (!groups.length) { showToast("这个任务还没有节点组，先圈几个节点成组", false); return; }
-  const target = !state.overview;          // 进入总览＝全收起；退出＝全摊开
-  let changed = 0;
-  for (const grp of groups) {
-    if (!!grp.collapsed === target) continue;
-    const r = await api(`/api/node-groups/${encodeURIComponent(grp.id)}/collapse`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ collapsed: target })
-    });
-    if (r.ok) { grp.collapsed = target; changed += 1; }
-  }
-  state.overview = target;
-  render();
-  fitView();
-  syncGraphJson();
-  showToast(target ? `总览：${groups.length} 个组按先后排好了` : `已摊开 ${changed} 个组`, true);
 }

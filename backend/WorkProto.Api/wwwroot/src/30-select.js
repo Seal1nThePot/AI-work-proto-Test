@@ -25,7 +25,8 @@ function touchesFocus(id) {
 /** 节点卡片 / 连线的 class：渲染和「只上色不重绘」共用同一套，别写两份规则。 */
 
 function nodeClass(n) {
-  return "node-box" + (n.compact ? " compact" : "") +
+  const level = typeof viewCompactLevel === "function" ? viewCompactLevel(n) : (n.compact || 0);
+  return "node-box" + (level ? " compact" : "") +
     (state.selectedIds.has(n.id) ? " picked" : "") + (state.selected === n.id ? " focus" : "");
 }
 

@@ -9,6 +9,12 @@
 async function saveNodePosition(nodeId, x, y) {
   const rx = Math.round(x);
   const ry = Math.round(y);
+  if (state.viewState) {
+    state.viewState.positions[nodeId] = { x: rx, y: ry };
+    syncGroupCachesFor([nodeId], false);
+    markViewDirty();
+    return { ok: true, status: 200, body: { nodeId, posX: rx, posY: ry } };
+  }
   const r = await api(`/api/nodes/${encodeURIComponent(nodeId)}/move`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -34,6 +40,14 @@ async function saveLayout(ids) {
     })
     .filter(Boolean);
   if (!nodes.length) return { ok: true, body: null };
+  if (state.viewState) {
+    // 视图图层里拖动只改当前快照；保存图层时再落库
+    for (const it of nodes) state.viewState.positions[it.id] = { x: it.x, y: it.y };
+    syncGroupCachesFor(ids, false);
+    markViewDirty();
+    if (typeof renderViewPanel === "function") renderViewPanel();
+    return { ok: true, status: 200, body: { moved: nodes.length } };
+  }
   const r = await api(`/api/tasks/${encodeURIComponent(state.taskId)}/layout`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -47,6 +61,7 @@ async function saveLayout(ids) {
     // 本地已经和库里一致了：把「上次渲染的图」同步一下，否则轮询会以为图变了，
     // 拖完 5 秒内必来一次整图重绘（节点上千就是 150ms 的卡顿）
     syncGraphJson();
+    syncGroupCachesFor(ids, true);   // 手动摆组的同时，把组内相对坐标缓存更新掉
   } else {
     showToast(`位置没存下：${r.body?.error || r.status}`, false);
   }

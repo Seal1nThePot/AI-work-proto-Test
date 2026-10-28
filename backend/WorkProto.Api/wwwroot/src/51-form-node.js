@@ -1,14 +1,24 @@
 // ────────── 51-form-node.js ──────────「节点表单与节点级写操作」
 // 用途: 节点属性：提交表单、存属性、删节点、切换收纳级别、建/删节点组
-// 暴露: submitNode saveNodeProps deleteNode setNodeCompact createNodeGroup deleteNodeGroup
+// 暴露: submitNode saveNodeProps deleteNode setNodeCompact createNodeGroup addNodeToGroup addNodeToNearestGroup deleteNodeGroup
 // 依赖: 01-state.js 02-dom.js 03-api.js 12-chain.js 13-group.js
 // 被依赖: 20-render.js 42-panel-group.js 与 app.js
 
-/** 选中节点后改属性：标题 / 一行目标 / 类型 / 循环区。 */
+/** 选中节点后改属性：标题 / 一行目标 / 类型；改动自动保存，按钮只作手动兜底。 */
 
-async function saveNodeProps(nodeId) {
+async function saveNodeProps(nodeId, opts = {}) {
+  const auto = !!opts.auto;
+  if (state.propsTimer) { clearTimeout(state.propsTimer); state.propsTimer = null; }
+  const titleValue = $("nTitle") ? $("nTitle").value : undefined;
+  if (auto && titleValue !== undefined && !titleValue.trim()) {
+    if (state.selected === nodeId) {
+      const box = $("propsResult");
+      if (box) { box.className = "formResult err"; box.innerHTML = "标题不能为空，未自动保存"; }
+    }
+    return { ok: false, status: 0, body: { error: "title-required", message: "标题不能为空" } };
+  }
   const payload = {
-    title: $("nTitle") ? $("nTitle").value : undefined,
+    title: titleValue,
     goalLine: $("nGoal") ? $("nGoal").value : undefined,
     kind: $("nKind") ? $("nKind").value : undefined
   };
@@ -20,20 +30,42 @@ async function saveNodeProps(nodeId) {
   const box = $("propsResult");
   if (r.ok) {
     const changed = r.body.changed || [];
-    if (box) {
-      box.className = "formResult ok";
-      box.innerHTML = changed.length ? `已保存：${esc(changed.join("；"))}` : "没有改动";
+    const node = r.body.node;
+    if (auto) {
+      if (node && state.graph) {
+        const idx = state.graph.nodes.findIndex((n) => n.id === nodeId);
+        if (idx >= 0) Object.assign(state.graph.nodes[idx], node);
+        if (!state.drag && !state.marquee && !state.pan && !state.connect) render();
+        syncGraphJson();
+      }
+      if (state.selected === nodeId && box) {
+        box.className = "formResult ok";
+        box.innerHTML = changed.length ? `已自动保存：${esc(changed.join("；"))}` : "没有改动";
+        if (node) {
+          const h = $("nodeHeadTitle");
+          const gl = $("nodeHeadGoal");
+          const meta = $("nodeHeadMeta");
+          if (h) h.textContent = node.title;
+          if (gl) gl.textContent = node.goalLine || "（无一行目标）";
+          if (meta) meta.textContent = `${node.kind} · 第 ${node.seq} 个 · attempt ${node.attempt} · epoch ${node.cycleEpoch}${node.cycleRegion ? " · 循环 " + node.cycleRegion : ""}`;
+        }
+      }
+    } else {
+      if (box) {
+        box.className = "formResult ok";
+        box.innerHTML = changed.length ? `已保存：${esc(changed.join("；"))}` : "没有改动";
+      }
+      await refresh();
+      await selectNode(nodeId);
+      paintSelection();
+      showToast(changed.length ? `节点已更新（${changed.length} 项）` : "没有改动", true);
     }
-    await refresh();
-    await selectNode(nodeId);
-    paintSelection();
-    showToast(changed.length ? `节点已更新（${changed.length} 项）` : "没有改动", true);
   } else {
-    if (box) {
+    if (state.selected === nodeId && box) {
       box.className = "formResult err";
       box.innerHTML = `<b>${esc(r.body?.error || r.status)}</b>：${esc(r.body?.message || "改属性失败")}`;
     }
-    showToast(`${r.body?.error || r.status}：${r.body?.message || "改属性失败"}`, false);
+    if (!auto) showToast(`${r.body?.error || r.status}：${r.body?.message || "改属性失败"}`, false);
   }
   return r;
 }
@@ -87,6 +119,40 @@ async function createNodeGroup(ids, title) {
     showToast(`${r.body?.error || r.status}：${r.body?.message || "建组失败"}`, false);
   }
   return r;
+}
+
+/** 把单个未分组节点加进已有组（右键菜单 / G 快捷键）。 */
+
+async function addNodeToGroup(nodeId, groupId) {
+  const r = await api(`/api/node-groups/${encodeURIComponent(groupId)}/nodes/${encodeURIComponent(nodeId)}`, {
+    method: "POST"
+  });
+  if (r.ok) {
+    showToast(`已把节点加入组「${r.body.title}」`, true);
+    await refresh();
+    await selectNode(nodeId);
+    paintSelection();
+  } else {
+    showToast(`${r.body?.error || r.status}：${r.body?.message || "加入组失败"}`, false);
+  }
+  return r;
+}
+
+/** 快捷键/菜单共用：找最近的组并加入；已在组内或附近没有组时给出提示。 */
+
+function addNodeToNearestGroup(nodeId) {
+  const n = state.nodesById.get(nodeId);
+  if (!n) return null;
+  if (n.groupId) {
+    showToast(`节点已在组「${groupTitle(n.groupId)}」里`, false);
+    return null;
+  }
+  const target = nearestGroupForNode(nodeId);
+  if (!target) {
+    showToast("附近没有可加入的节点组", false);
+    return null;
+  }
+  return addNodeToGroup(nodeId, target.id);
 }
 
 /** 删节点组：withNodes=false 只解散（节点全留）；true 连节点一起删（组里有一个删不起就整批不动）。 */

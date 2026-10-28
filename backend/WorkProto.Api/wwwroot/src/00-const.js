@@ -1,6 +1,6 @@
 // ────────── 00-const.js ──────────「常量」
 // 用途: 常量：状态色与文案表、节点/链/端口几何、视口缩放范围、底纹步长、吸附阈值、SVG 命名空间
-// 暴露: STATUS_COLORS STATUS_TEXT MODE_TEXT NODE_W NODE_H COMPACT_W COMPACT_H CHAIN_W CHAIN_H CHAIN_FRAME_MIN NODE_GAP_X NODE_GAP_Y PORT_R PORT_HIT MIN_SCALE MAX_SCALE GRID_STEP SNAP_PX DRAG_START SVG_NS
+// 暴露: STATUS_COLORS STATUS_TEXT MODE_TEXT NODE_W NODE_H COMPACT_W COMPACT_H CHAIN_W CHAIN_H CHAIN_FRAME_MIN NODE_GAP_X NODE_GAP_Y PORT_R PORT_HIT MIN_SCALE MAX_SCALE LOD_GROUP_SCALE GRID_STEP SNAP_PX DRAG_START SVG_NS
 // 依赖: 无
 // 被依赖: 01/02/03 与 app.js 全部下游脚本
 
@@ -35,8 +35,9 @@ const NODE_GAP_X = 96;
 const NODE_GAP_Y = 34;
 const PORT_R = 7;
 const PORT_HIT = 14;
-const MIN_SCALE = 0.2;
-const MAX_SCALE = 2.5;
+const MIN_SCALE = 0.0001;
+const MAX_SCALE = 10000;
+const LOD_GROUP_SCALE = 0.55;   // 普通视图低于这个缩放只画组名（紧凑/组视角除外）
 const GRID_STEP = 24;      // 底纹一格＝世界坐标 24px；画布没边，格子跟着视口走
 const SNAP_PX = 12;        // Shift 拖动时的吸附阈值（世界坐标 px）
 const DRAG_START = 3;      // 手抖不到 3px 不算拖动：不然「点一下」会被吞成拖动

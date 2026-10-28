@@ -1,8 +1,9 @@
 // ────────── Program.cs ──────────「端点表」
-// 用途: 40 个端点的接线与请求体绑定，一一对上 docs\api.md 的端点表
+// 用途: 48 个端点的接线与请求体绑定，一一对上 docs\api.md 的端点表
 // 暴露: 无（顶层语句）
-// 依赖: Proto.*.cs（15 个 partial 文件）
+// 依赖: Proto.*.cs（16 个 partial 文件）
 // 被依赖: run-proto.cmd、verify 脚本
+using System.Text.Json;
 using WorkProto.Api;
 
 // content root 钉在程序目录：直接 dotnet WorkProto.Api.dll 也能找到 wwwroot
@@ -36,6 +37,9 @@ app.MapGet("/api/tasks", () => Done(Proto.ListTasks()));
 
 app.MapPost("/api/tasks", (CreateTaskRequest req) => Done(Proto.CreateTask(req)));
 
+// 导入「工作流 + 视图」bundle：新建任务并重映射所有 ID
+app.MapPost("/api/import", (JsonElement req) => Done(Proto.ImportBundle(req)));
+
 app.MapDelete("/api/tasks/{id}", (string id) => Done(Proto.DeleteTask(id)));
 
 // 图增量：新建节点 / 新建连线（规则与建图同一套）
@@ -67,6 +71,9 @@ app.MapPost("/api/nodes/{id}/props", (string id, NodePatchRequest req) => Done(P
 // 节点组（右键多选建，纯视觉分组，不参与执行）
 app.MapPost("/api/tasks/{id}/node-groups", (string id, NodeGroupSpec req) => Done(Proto.CreateNodeGroup(id, req, "api")));
 
+// 单个节点加入已有组（右键「加入最近组」/ G 快捷键）
+app.MapPost("/api/node-groups/{id}/nodes/{nodeId}", (string id, string nodeId) => Done(Proto.JoinNodeGroup(nodeId, id, "api")));
+
 // 把组声明成循环区（组＋回边＋检查点），以及撤销
 app.MapPost("/api/node-groups/{id}/loop", (string id, LoopSpecRequest req) => Done(Proto.DeclareLoop(id, req, "api")));
 
@@ -74,6 +81,16 @@ app.MapDelete("/api/node-groups/{id}/loop", (string id) => Done(Proto.UndoLoop(i
 
 // 收纳/展开只是看图状态
 app.MapPost("/api/node-groups/{id}/collapse", (string id, CollapseRequest req) => Done(Proto.SetGroupCollapsed(id, req)));
+
+// 组内相对布局缓存（按组整理/手动排列后保存；只存相对坐标）
+app.MapPost("/api/node-groups/{id}/layout", (string id, GroupLayoutRequest req) => Done(Proto.SetGroupLayout(id, req)));
+
+// 视图图层：紧凑/堆叠/组视角等纯看图快照，可命名、切换、删除
+app.MapGet("/api/tasks/{id}/view-layers", (string id) => Done(Proto.ListViewLayers(id)));
+app.MapPost("/api/tasks/{id}/view-layers", (string id, ViewLayerSpec req) => Done(Proto.CreateViewLayer(id, req)));
+app.MapGet("/api/view-layers/{id}", (string id) => Done(Proto.GetViewLayer(id)));
+app.MapPost("/api/view-layers/{id}", (string id, ViewLayerSpec req) => Done(Proto.UpdateViewLayer(id, req)));
+app.MapDelete("/api/view-layers/{id}", (string id) => Done(Proto.DeleteViewLayer(id)));
 
 // 单个节点收纳：0 完整 / 1 仅标题 / 2 仅关键字
 app.MapPost("/api/nodes/{id}/compact", (string id, CompactRequest req) => Done(Proto.SetNodeCompact(id, req)));

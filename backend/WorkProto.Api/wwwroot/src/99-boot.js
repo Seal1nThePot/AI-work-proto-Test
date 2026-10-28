@@ -10,26 +10,41 @@ async function bootstrap() {
   bindSvgEvents();
   await loadTasks();
   await loadGraph();
+  await loadViewLayers();
+  renderViewPanel();
 }
 
 $("taskSelect").addEventListener("change", async (e) => {
-  state.taskId = e.target.value;
+  const prev = state.taskId;
+  const next = e.target.value;
+  if (next === prev) return;
+  const ok = await guardViewDirty();
+  if (!ok) { e.target.value = prev; return; }
+  state.taskId = next;
   state.selected = null;
   state.selectedIds = new Set();
   state.fittedFor = null;
   $("sideBody").innerHTML = "";
   closeForm();
+  resetViewState();
   await loadGraph();
+  await loadViewLayers();
 });
 
 $("addTaskBtn").addEventListener("click", openTaskForm);
 $("addNodeBtn").addEventListener("click", () => { state.pendingPos = null; openNodeForm(); });
 $("addEdgeBtn").addEventListener("click", () => openEdgeForm());
 $("tplBtn").addEventListener("click", () => openTemplatePanel());
-$("arrangeBtn").addEventListener("click", () => arrangeByGroups());
-$("overviewBtn").addEventListener("click", () => toggleOverview());
+$("viewMenuBtn").addEventListener("click", (e) => openViewMenu(e));
 $("fitBtn").addEventListener("click", fitView);
 $("refreshBtn").addEventListener("click", () => refresh());
+
+$("bundleFile").addEventListener("change", async () => {
+  const input = $("bundleFile");
+  const file = input.files && input.files[0];
+  if (file) await importBundleFile(file);
+  input.value = "";
+});
 
 $("autoRefresh").addEventListener("change", (e) => {
   if (state.timer) clearInterval(state.timer);

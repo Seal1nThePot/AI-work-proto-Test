@@ -103,6 +103,31 @@ public static partial class Proto
         return ApiResult.Created(new { id = groupId, title, nodeIds = rows.Select(n => n.Id).ToArray() });
     }
 
+    /// <summary>把单个未分组节点加进已有组：右键菜单/快捷键都走这里，不改执行语义。</summary>
+    public static ApiResult JoinNodeGroup(string nodeId, string groupId, string by)
+    {
+        using var c = ProtoDb.Open();
+        var node = ReadNode(c, nodeId);
+        if (node is null) return ApiResult.Fail(404, Reasons.NodeNotFound, $"节点 {nodeId} 不存在");
+
+        var title = GroupTitle(c, groupId);
+        if (title is null) return ApiResult.Fail(404, Reasons.NodeGroupNotFound, $"节点组 {groupId} 不存在");
+        var groupTask = Scalar(c, "SELECT task_id FROM node_groups WHERE id=@g", ("@g", groupId)) as string;
+        if (groupTask != node.TaskId)
+            return ApiResult.Fail(400, Reasons.UnknownNode, $"节点 {nodeId} 和组 {groupId} 不在同一个任务里");
+
+        if (node.GroupId == groupId)
+            return ApiResult.Ok(new { nodeId, groupId, title, changed = false });
+        if (node.GroupId is not null)
+            return ApiResult.Fail(409, Reasons.NodeAlreadyGrouped,
+                $"节点「{node.Title}」已在组「{GroupTitle(c, node.GroupId)}」里；先移出原组再加");
+
+        Exec(c, "UPDATE nodes SET group_id=@g, updated_at_utc=@now WHERE id=@id",
+            ("@g", groupId), ("@now", Now()), ("@id", nodeId));
+        Event(c, node.TaskId, nodeId, "node-group-append", by, $"节点「{node.Title}」加入组「{title}」");
+        return ApiResult.Ok(new { nodeId, groupId, title, changed = true });
+    }
+
     /// <summary>
     /// 单个节点收纳：0=完整卡片，1=只留标题，2=只留关键字（一行目标）。纯看图状态，不写 events。
     /// 存的是「显示级别」而不是布尔——保留成 0/1/2 才够以后再加「只留状态」之类的一档。

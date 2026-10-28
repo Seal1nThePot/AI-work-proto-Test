@@ -79,6 +79,7 @@ public static partial class Proto
             .Select(g => new
             {
                 id = g.Id, title = g.Title, collapsed = g.Collapsed,
+                layout = string.IsNullOrWhiteSpace(g.Layout) ? (JsonElement?)null : JsonSerializer.Deserialize<JsonElement>(g.Layout),
                 nodeIds = nodes.Where(n => n.GroupId == g.Id).Select(n => n.Id).ToArray()
             })
             .ToArray();

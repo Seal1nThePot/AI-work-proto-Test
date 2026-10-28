@@ -1,6 +1,6 @@
 <!-- 用途: 页面骨架 + 脚本装配单：<script src> 的顺序就是依赖顺序（index.html 是唯一真相源，加载器跟着它走） -->
 <!-- 暴露: 无（DOM 结构） -->
-<!-- 依赖: src\00-const → 01-state → 02-dom → 03-api（基建）→ 10-geo → 11-layout → 12-chain → 13-group → 20-render → 21-render-diff → 30-select → 40~45 面板 → 50~52 表单 → 60-write → 70-drag → 71-pointer → 80-menu → 81-keyboard → 90-bind → 99-boot（永远最后） -->
+<!-- 依赖: src\00-const → 01-state → 02-dom → 03-api（基建）→ 10-geo → 11-layout → 12-chain → 13-group → 14-view → 15-arrange → 20-render → 21-render-diff → 30-select → 40~46 面板 → 50~52 表单 → 60-write → 70-drag → 71-pointer → 80-menu → 81-keyboard → 90-bind → 99-boot（永远最后） -->
 <!-- 被依赖: verify\ui-smoke.mjs（按此顺序拼接脚本）、run-canvas-bench.mjs -->
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -20,13 +20,13 @@
     <button id="addNodeBtn" type="button" class="primary">＋ 新建节点</button>
     <button id="addEdgeBtn" type="button" class="primary">＋ 新建连线</button>
     <button id="tplBtn" type="button" class="primary">模板库</button>
-  <button id="arrangeBtn" type="button">按组整理</button>
-  <button id="overviewBtn" type="button">总览</button>
+    <button id="viewMenuBtn" type="button">视图 ▾</button>
     <button id="refreshBtn" type="button">刷新</button>
     <button id="fitBtn" type="button">重置视图</button>
     <label class="auto"><input type="checkbox" id="autoRefresh" checked /> 每 5 秒自动刷新</label>
     <span id="zoomNote" class="dbnote"></span>
     <span id="dbNote" class="dbnote"></span>
+    <input id="bundleFile" type="file" accept=".json,application/json" hidden />
   </div>
 </header>
 
@@ -38,6 +38,7 @@
   </section>
 
   <aside id="side">
+    <div id="viewPanel" class="view-panel"></div>
     <div id="formHost"></div>
     <div class="sideHint">点节点方块就能在下面改它的属性（标题 / 一行目标 / 类型 / 循环区），也能看到输入条件、最近三次检查点、上次被拒原因。<br>
       操作：拖节点移动 · 框选或 Shift 点多选 · Shift 拖＝左右吸附 · 双击空白＝直接建节点 · 右键点节点/组标签＝菜单 · 右键按住拖＝连线（Shift＝回边）。</div>
@@ -47,6 +48,17 @@
 
 <div id="ctxMenu" class="ctx hidden"></div>
 <div id="toast" class="toast" style="display:none"></div>
+<div id="viewDialog" class="view-dialog hidden">
+  <div class="view-dialog-box">
+    <b>当前视图有未保存的改动</b>
+    <div class="view-dialog-text">保存为图层后，随时可以在右栏切回来；不保存则丢弃这次视图操作。</div>
+    <div class="view-dialog-actions">
+      <button id="viewDialogSave" type="button" class="primary">保存为图层</button>
+      <button id="viewDialogDiscard" type="button">不保存</button>
+      <button id="viewDialogCancel" type="button">取消</button>
+    </div>
+  </div>
+</div>
 
 <script src="src/00-const.js"></script>
 <script src="src/01-state.js"></script>
@@ -56,6 +68,8 @@
 <script src="src/11-layout.js"></script>
 <script src="src/12-chain.js"></script>
 <script src="src/13-group.js"></script>
+<script src="src/14-view.js"></script>
+<script src="src/15-arrange.js"></script>
 <script src="src/20-render.js"></script>
 <script src="src/21-render-diff.js"></script>
 <script src="src/30-select.js"></script>
@@ -65,6 +79,7 @@
 <script src="src/43-panel-chain.js"></script>
 <script src="src/44-panel-template.js"></script>
 <script src="src/45-cycle.js"></script>
+<script src="src/46-panel-view.js"></script>
 <script src="src/50-form-task.js"></script>
 <script src="src/51-form-node.js"></script>
 <script src="src/52-form-edge.js"></script>

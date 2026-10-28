@@ -36,6 +36,12 @@ public sealed record MoveRequest(int? X, int? Y);
 
 public sealed record MoveNodeItem(string? Id, int? X, int? Y);
 
+public sealed record GroupLayoutItem(string? Id, int? Dx, int? Dy);
+
+public sealed record GroupLayoutRequest(GroupLayoutItem[]? Nodes);
+
+public sealed record ViewLayerSpec(string? Name, string? Payload);
+
 public sealed record MoveBatchRequest(MoveNodeItem[]? Nodes);
 
 public sealed record PortsRequest(int? InPorts, int? OutPorts);

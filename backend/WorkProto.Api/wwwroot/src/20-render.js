@@ -6,6 +6,73 @@
 
 // ---------------- 渲染 ----------------
 
+/** 世界坐标参考系：轴和刻度随节点/组一起平移缩放，不固定在屏幕上。 */
+function coordAxesSvg() {
+  let max = 0;
+  for (const p of state.positions.values()) {
+    max = Math.max(max, Math.abs(p.x), Math.abs(p.y), Math.abs(p.x + p.w), Math.abs(p.y + p.h));
+  }
+  const R = Math.max(4000, Math.ceil((max + 1600) / 800) * 800);
+  const step = 800;
+  let grid = "";
+  let labels = "";
+  for (let v = -R; v <= R; v += step) {
+    if (v === 0) continue;
+    grid += `<line class="axis-grid" x1="${v}" y1="${-R}" x2="${v}" y2="${R}"></line>` +
+      `<line class="axis-grid" x1="${-R}" y1="${v}" x2="${R}" y2="${v}"></line>`;
+    labels += `<text class="axis-tick-label" x="${v}" y="20" text-anchor="middle">${v}</text>` +
+      `<text class="axis-tick-label" x="12" y="${v - 4}">${v}</text>`;
+  }
+  return `<g class="coord-axes" pointer-events="none">
+    ${grid}
+    <line class="axis" x1="${-R}" y1="0" x2="${R}" y2="0"></line>
+    <line class="axis" x1="0" y1="${-R}" x2="0" y2="${R}"></line>
+    ${labels}
+    <circle class="axis-origin" cx="0" cy="0" r="4"></circle>
+    <text class="axis-label" x="${R - 80}" y="-16" text-anchor="end">x</text>
+    <text class="axis-label" x="16" y="${-R + 80}">y</text>
+    <text class="axis-origin-label" x="12" y="20">0</text>
+  </g>`;
+}
+
+/** 拉远时只画组名：组标签用 1/scale 反缩放，屏幕字号保持 13px。 */
+function renderGroupLod(g) {
+  state.lodActive = true;
+  state.hiddenIds = new Set((g.nodes || []).map((n) => n.id));
+  state.chains = [];
+  state.chainByMember = new Map();
+  state.chainRects = new Map();
+  state.pills = new Map();
+  state.overviewOrder = [];
+  state.cycleByGroup = new Map();
+  state.nodeEls = new Map();
+  state.edgeEls = new Map();
+  state.groupEls = new Map();
+  state.groupChipEls = new Map();
+  state.pillEls = new Map();
+  state.cycleEls = new Map();
+  state.cycleLabelEls = new Map();
+  state.alignLineEls = [];
+  state.alignTipEls = [];
+  const inv = 1 / Math.max(MIN_SCALE, state.viewport.scale);
+  const parts = [];
+  for (const grp of g.nodeGroups || []) {
+    const b = groupBounds(grp.id);
+    if (!b) continue;
+    const label = cut(grp.title, 18);
+    const w = Math.max(128, label.length * 20 + 34);
+    const picked = state.selectedGroup === grp.id;
+    parts.push(`<g class="lod-group${picked ? " picked" : ""}" data-nodegroup-chip="${esc(grp.id)}"
+      transform="translate(${(b.x1 + b.x2) / 2},${(b.y1 + b.y2) / 2}) scale(${inv})">
+      <title>双击进入组，拖拽移动组</title>
+      <rect x="${-w / 2}" y="-22" width="${w}" height="44" rx="22"></rect>
+      <text x="0" y="7" text-anchor="middle">${esc(label)}</text>
+    </g>`);
+  }
+  $("graph").innerHTML = `<g id="viewport" transform="translate(${state.viewport.tx},${state.viewport.ty}) scale(${state.viewport.scale})">${coordAxesSvg()}${parts.join("")}</g>`;
+  applyViewport();
+}
+
 function portCircles(side, p, color) {
   const count = side === "in" ? p.inPorts || 1 : p.outPorts || 1;
   const local = { x: 0, y: 0, w: p.w, h: p.h };
@@ -35,13 +102,20 @@ function render() {
     `<span><i style="background:#7c3aed"></i>循环区（带循环的组）</span>` +
     `<span><i style="background:#2563eb"></i>节点组</span>` +
     `<span><i style="background:#0ea5e9"></i>同向链（几节合 1）</span>` +
-    `<span class="hint">拖空白＝框选（点空白＝取消选中） · 拖节点＝移动（可多选一起拖） · <b>拖组名/组边框＝整组一起挪</b> · <b>按住 Shift 拖＝左右 + 前后吸附</b> · 滚轮＝缩放 · 中键拖＝平移（画布没边） · 双击空白＝建节点 · <b>双击标题＝节点/组/链 快收快开</b> · 右键节点＝「同向链收成一块」 · <b>点节点/连线/组/链块＝选中，按 Delete＝删掉它</b> · 右键＝菜单 · 右键按住拖＝连线（Shift＝回边）</span>`;
+    `<span class="hint">拖空白＝框选（点空白＝取消选中） · 拖节点＝移动（可多选一起拖） · <b>拖组名/组边框＝整组一起挪</b> · <b>按住 Shift 拖＝左右 + 前后吸附</b> · 滚轮＝缩放 · 中键拖＝平移（画布没边） · 双击空白＝建节点 · <b>双击标题＝节点/组/链 快收快开</b> · 右键节点＝「同向链收成一块」 · <b>点节点/连线/组/链块＝选中，按 Delete＝删掉它</b> · 右键＝菜单 · 右键按住拖＝连线（Shift＝回边） · 空格＝复位到工作流</span>`;
 
   state.positions = layout(g);
   state.nodesById = new Map(g.nodes.map((n) => [n.id, n]));
+  state.lodActive = false;
+  if (state.viewport.scale < LOD_GROUP_SCALE && !viewCompactView() && !viewGroupView() && (g.nodeGroups || []).length) {
+    renderGroupLod(g);
+    return;
+  }
   state.collapsedIds = collapsedGroupIds();     // 先算"哪些组收成牌了"，链框与 fit 都要用
   // 同向链：纯前端按边算出来的（后端只有节点和连线，链是看法不是数据）
   state.chainIndex = null;
+  state.noChains = (typeof viewCompactView === "function" && viewCompactView())
+    || (typeof viewGroupView === "function" && viewGroupView());
   state.chains = state.noChains ? [] : graphChains();
   state.chainByMember = new Map();
   for (const ch of state.chains) for (const id of ch.nodeIds) state.chainByMember.set(id, ch);
@@ -55,7 +129,8 @@ function render() {
   }
   // 循环区＝带循环的组：组 id → cycles 行
   state.cycleByGroup = new Map((g.cycles || []).filter((c) => c.groupId).map((c) => [c.groupId, c]));
-  state.overviewOrder = state.overview ? groupOrder(g) : [];   // 总览时牌子按组的先后排格子
+  state.overviewOrder = (state.overview || (typeof viewGroupView === "function" && viewGroupView()))
+    ? groupOrder(g) : [];   // 总览/组视角时牌子按组的先后排格子
   state.pills = new Map();
   for (const gid of state.collapsedIds) {
     const pill = pillRect(gid);
@@ -102,7 +177,7 @@ function render() {
 
   // 大图（节点多）默认把「组间」的线收成一束：一条线 + ×N，组内的线照旧一条条画。
   // 不然十个组各摊一片，跨组线横穿整张画布，叠起来就是一坨。
-  state.bundleCross = g.nodes.length > 60;
+  state.bundleCross = g.nodes.length > 60 || (typeof viewGroupView === "function" && viewGroupView());
   const bundles = new Map();
   for (const e of g.edges) {
     if (!state.bundleCross) break;
@@ -205,7 +280,7 @@ function render() {
     const st = groupStats(gid);
     const cy = state.cycleByGroup.get(gid);
     const step = pill.step ? `${pill.step}` : "";
-    const title = `${step ? step + " · " : ""}${cy ? "循环 · " : "组 · "}${cut(grp ? grp.title : gid, state.overview ? 18 : 15)}`;
+    const title = `${step ? step + " · " : ""}${cy ? "循环 · " : "组 · "}${cut(grp ? grp.title : gid, (state.overview || (typeof viewGroupView === "function" && viewGroupView())) ? 18 : 15)}`;
     parts.push(`<g class="group-pill" data-nodegroup-pill="${esc(gid)}" transform="translate(${pill.x},${pill.y})">
       <rect x="0" y="0" width="${pill.w}" height="${pill.h}" rx="10" fill="#eff6ff" stroke="${st.color}" stroke-width="2"></rect>
       <rect x="0" y="0" width="6" height="${pill.h}" rx="3" fill="${st.color}"></rect>
@@ -257,9 +332,10 @@ function render() {
     const color = STATUS_COLORS[n.status] || "#6b7280";
     const dash = n.status === "skipped" ? 'stroke-dasharray="5 4"' : "";
 
-    if (n.compact) {
+    const compactLevel = typeof viewCompactLevel === "function" ? viewCompactLevel(n) : (n.compact || 0);
+    if (compactLevel) {
       // 收纳后只剩一行：1＝标题，2＝关键字（一行目标）
-      const label = n.compact === 2 ? cut(n.goalLine || "（无关键字）", 11) : cut(n.title, 11);
+      const label = compactLevel === 2 ? cut(n.goalLine || "（无关键字）", 11) : cut(n.title, 11);
       parts.push(`<g class="${nodeClass(n)}" data-node="${esc(n.id)}" transform="translate(${p.x},${p.y})">
         <title>${esc(n.title)} · ${esc(STATUS_TEXT[n.status] || n.status)}${n.goalLine ? " · " + esc(n.goalLine) : ""}</title>
         <rect class="node-body" x="0" y="0" width="${p.w}" height="${p.h}" rx="8" fill="#ffffff" stroke="${color}" stroke-width="2" ${dash}></rect>
@@ -281,7 +357,7 @@ function render() {
     </g>`);
   }
 
-  svg.innerHTML = `<g id="viewport" transform="translate(${vp.tx},${vp.ty}) scale(${vp.scale})">${parts.join("")}</g>`;
+  svg.innerHTML = `<g id="viewport" transform="translate(${vp.tx},${vp.ty}) scale(${vp.scale})">${coordAxesSvg()}${parts.join("")}</g>`;
 
   // 建索引：拖动时按索引直接改，不再 querySelector 逐条找
   state.edgeEls = new Map();

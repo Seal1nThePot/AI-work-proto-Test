@@ -28,6 +28,7 @@ function focusProps() {
 // ---------------- 节点详情 ----------------
 
 async function selectNode(nodeId) {
+  if (state.propsTimer) { clearTimeout(state.propsTimer); state.propsTimer = null; }
   state.selected = nodeId;
   state.selectedEdge = null;
   state.selectedGroup = null;
@@ -42,11 +43,11 @@ async function selectNode(nodeId) {
   const color = STATUS_COLORS[n.status] || "#6b7280";
   const out = [];
   out.push(`<div class="node-head">
-    <h2>${esc(n.title)}</h2>
-    <div class="goal">${esc(n.goalLine || "（无一行目标）")}</div>
+    <h2 id="nodeHeadTitle">${esc(n.title)}</h2>
+    <div class="goal" id="nodeHeadGoal">${esc(n.goalLine || "（无一行目标）")}</div>
     <div style="margin-top:6px">
       <span class="chip" style="background:${color}">${esc(STATUS_TEXT[n.status] || n.status)}</span>
-      <span class="muted">${esc(n.kind)} · 第 ${n.seq} 个 · attempt ${n.attempt} · epoch ${n.cycleEpoch}${n.cycleRegion ? " · 循环 " + esc(n.cycleRegion) : ""}</span>
+      <span class="muted" id="nodeHeadMeta">${esc(n.kind)} · 第 ${n.seq} 个 · attempt ${n.attempt} · epoch ${n.cycleEpoch}${n.cycleRegion ? " · 循环 " + esc(n.cycleRegion) : ""}</span>
     </div>
     ${n.blockedReason ? `<div class="muted">阻塞原因：<code>${esc(n.blockedReason)}</code> · 可解除：master 或 lead</div>` : ""}
   </div>`);
@@ -65,7 +66,7 @@ async function selectNode(nodeId) {
       <label>循环区 <input disabled value="${esc(n.cycleRegion ? "属于循环组「" + n.cycleRegion + "」" : "（不在循环区里）")}" /></label>
       <div class="muted">循环区不再挂在节点上：把节点圈进一个组，再给那个组声明循环。</div>
       <div class="portsRow"><button type="button" id="saveProps">保存属性</button>
-        <span class="muted">换循环区要先断线，否则回边语义会乱</span></div>
+        <span class="muted">改动会自动同步；换循环区要先断线</span></div>
       <div id="propsResult" class="formResult"></div>
     </div>
   </div>`);
@@ -120,6 +121,30 @@ async function selectNode(nodeId) {
   if (kindSel) kindSel.value = n.kind;
   const propsBtn = $("saveProps");
   if (propsBtn) propsBtn.onclick = () => saveNodeProps(n.id);
+  const scheduleProps = () => {
+    if (state.propsTimer) clearTimeout(state.propsTimer);
+    state.propsTimer = setTimeout(() => {
+      state.propsTimer = null;
+      saveNodeProps(n.id, { auto: true });
+    }, 500);
+  };
+  const savePropsNow = () => {
+    if (state.propsTimer) { clearTimeout(state.propsTimer); state.propsTimer = null; }
+    return saveNodeProps(n.id, { auto: true });
+  };
+  const titleInput = $("nTitle");
+  const goalInput = $("nGoal");
+  if (titleInput) {
+    titleInput.oninput = scheduleProps;
+    titleInput.onchange = savePropsNow;
+    titleInput.onkeydown = (e) => { if (e && e.key === "Enter") { e.preventDefault(); savePropsNow(); } };
+  }
+  if (goalInput) {
+    goalInput.oninput = scheduleProps;
+    goalInput.onchange = savePropsNow;
+    goalInput.onkeydown = (e) => { if (e && e.key === "Enter") { e.preventDefault(); savePropsNow(); } };
+  }
+  if (kindSel) kindSel.onchange = savePropsNow;
   const saveBtn = $("savePorts");
   if (saveBtn) saveBtn.onclick = () => saveNodePorts(n.id);
 }

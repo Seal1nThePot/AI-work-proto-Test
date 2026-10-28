@@ -165,8 +165,19 @@ public static class ProtoDb
           task_id        TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
           title          TEXT NOT NULL,
           collapsed      INTEGER NOT NULL DEFAULT 0,
+          layout_json    TEXT,
           created_at_utc TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS view_layers (
+          id             TEXT PRIMARY KEY,
+          task_id        TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          name           TEXT NOT NULL,
+          payload_json   TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL,
+          updated_at_utc TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_view_layers_task ON view_layers(task_id, created_at_utc);
 
         CREATE TABLE IF NOT EXISTS node_templates (
           id             TEXT PRIMARY KEY,
@@ -246,6 +257,7 @@ public static class ProtoDb
         AddColumnIfMissing(conn, "nodes", "group_id", "TEXT");
         AddColumnIfMissing(conn, "nodes", "compact", "INTEGER NOT NULL DEFAULT 0");
         AddColumnIfMissing(conn, "node_groups", "collapsed", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing(conn, "node_groups", "layout_json", "TEXT");
         AddColumnIfMissing(conn, "cycles", "group_id", "TEXT");
         MigrateLoopsIntoGroups(conn);
     }

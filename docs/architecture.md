@@ -4,7 +4,7 @@
 
 ## 一、进程与端口
 
-一个 `dotnet WorkProto.Api.dll` 进程同时干两件事：`/api/*` 的 REST 与 `wwwroot` 里的静态页。没有前端构建链、没有第二个进程、没有依赖另一个服务。
+一个 `dotnet WorkProto.Api.dll` 进程同时干两件事：`/api/*` 的 REST 与 `wwwroot` 里的静态页。当前仍是零前端构建（30 个 JS 按 `index.html` 顺序加载）；0.5 的 TypeScript 迁移计划见 `D:\CodexWork\handoff\2026-10-29-workproto-frontend-ts.md`。没有第二个进程、没有依赖另一个服务。
 
 | 项 | 值 |
 | --- | --- |
@@ -34,40 +34,43 @@ backend\WorkProto.Api\
   Proto.Group.cs       节点组与循环区：建/收纳/展开/删、声明与撤销循环
   Proto.Edge.cs        连线：建/读/改/删、人工门确认
   Proto.Template.cs    模板库：节点/组模板增删查与应用
-  Proto.Task.cs        任务级：建图 / 删任务 / 删节点
+  Proto.View.cs        组内相对布局缓存 + 视图图层 CRUD（只存看法，不写 events）
+  Proto.Task.cs        任务级：建图 / 导入 bundle / 删任务 / 删节点
   wwwroot\
     index.html     工具栏 + 画布容器 + 右栏面板的骨架
-    src\           27 个文件（P2~P8 全部切完，app.js 已消失）：
+    src\           30 个文件（P2~P8 + 0.4.11 视图，app.js 已消失）：
                       00-const 01-state 02-dom 03-api（基建）
-                      10-geo（几何与视口）11-layout（自动布局）12-chain（同向链）13-group（组几何与牌面）
+                      10-geo（几何与视口）11-layout（布局基元）12-chain（同向链）13-group（组几何与牌面）
+                      14-view（视图快照/图层/撤销/开关）15-arrange（组缓存/整理/紧凑布局）
                       20-render（整图重绘）21-render-diff（脏边/邻接边增量）30-select（选中态）
-                      40-panel-node 41-panel-edge 42-panel-group 43-panel-chain 44-panel-template 45-cycle（右栏六个面板）
+                      40-panel-node 41-panel-edge 42-panel-group 43-panel-chain 44-panel-template 45-cycle 46-panel-view（右栏七个面板）
                       50-form-task 51-form-node 52-form-edge 60-write（表单与写操作）
                       70-drag（拖动与吸附）71-pointer（指针状态机，整块不切）
                       80-menu（右键菜单）81-keyboard（Delete）90-bind（事件绑定）99-boot（顶栏接线 + 启动）
       ↑ 顺序即依赖，index.html 里的 <script src> 是唯一真相源
-    （app.js 已在 0.4.8 删除：全部逻辑进了 src\ 的 27 个文件，加载顺序见 index.html）
+    （app.js 已在 0.4.8 删除：全部逻辑进了 src\ 的 30 个文件，加载顺序见 index.html）
     style.css      所有视觉与选择态（`.picked` / `.focus` / `.edge-focus` / `.edge-dim` 都在 CSS 里）
 ```
 
-分层原则：**业务判定只在后端 `Proto.*.cs`**（15 个 `partial class Proto`，编译器眼里仍是一个类），页面不复制一份语义；页面只负责「看得见」与「发请求」。每个文件前四行写着 `用途/暴露/依赖/被依赖`，`索引.md` 由 `tools/gen-index.mjs` 生成。
+分层原则：**业务判定只在后端 `Proto.*.cs`**（16 个 `partial class Proto`，编译器眼里仍是一个类），页面不复制一份语义；页面只负责「看得见」与「发请求」。每个文件前四行写着 `用途/暴露/依赖/被依赖`，`索引.md` 由 `tools/gen-index.mjs` 生成。
 
 ## 三、数据层
 
 ### 表
 
-六张业务表加辅助表，DDL 在 `ProtoDb.cs` 的 `Schema` 常量里（可直接对）：
+业务表加辅助表，DDL 在 `ProtoDb.cs` 的 `Schema` 常量里（可直接对）：
 
 | 表 | 干什么 |
 | --- | --- |
 | `tasks` | 任务（`open/running/done`） |
 | `nodes` | 节点：`seq`、`status`、`attempt`、`cycle_region`(镜像)、`cycle_epoch`、`blocked_reason`、`pos_x/pos_y`、`in_ports/out_ports`、`group_id`、`compact` |
+| `node_groups` | 组：`title`、`collapsed`、`layout_json`（组内相对坐标缓存 `[{id,dx,dy}]`） |
+| `view_layers` | 视图图层：`task_id`、`name`、`payload_json`、创建/更新时间；只存看法，不复制节点结构；列表按 payload 回带 `modes` 标签 |
 | `edges` | 连线：`kind`(transfer/loop)、`target_step_id`、`graph_version`、`from_port/to_port`、`gate/gate_note`、`gate_confirmed_by/at_utc` |
 | `input_groups` | 每个目标节点一份输入规则组：`mode`、`need_count`、`items_json`、`chosen_edge_id` |
 | `releases` | 放行记录，幂等靠 `UNIQUE(edge_id,to_node_id,node_attempt,cycle_epoch)` |
 | `cycles` | 循环区：`group_id`（真身，挂在节点组上）、`region_key`（组名的显示镜像）、`limit_count`、`raised_*` |
 | `checkpoints` | 检查点：三句话、起止时间、verdict、轮次号 |
-| `node_groups` | 节点组：`title`、`collapsed` |
 | `node_templates` / `group_templates` | 跨任务预设 |
 | `leases` / `events` | 租约、只追加留痕 |
 
@@ -127,10 +130,16 @@ ConnectionString => $"Data Source={DbPath};Pooling=True";
 | `drag` / `snap` | 拖动过程、吸附参考线 | 否 |
 | `collapsedChains` | 同向链收没收起（存链头节点 id） | **否，刻意只在内存** |
 | `paintedKey` | 上次画的选择态指纹 | 否 |
+| `viewState` | 当前视图快照（坐标、组内相对缓存、组视角/紧凑/允许覆盖开关、视口）；`null`＝原视图 | 否；存成图层时进 `view_layers.payload_json` |
+| `viewLayerId` / `viewDirty` / `viewHistory` | 当前图层、未保存标记、Ctrl+Z 视图历史 | 否（图层本身落库，当前选中不落） |
+| `propsTimer` | 节点属性自动保存的 500ms 防抖计时器 | 否 |
+| `lodActive` | 当前是否处于“只画组名”的远视角 | 否 |
 
 ### 渲染
 
-- `render()` 按 `graph.nodes[].posX/posY` 重算布局 → 生成整棵 SVG（节点、线、组框、链块）；`layout()` 里算出 `p.w/p.h`，所以**端口均分、连线端点、框选命中、组框包围盒、fit 全部自动跟着卡片尺寸走**，不需要各自特判。
+- `render()` 按 `graph.nodes[].posX/posY` 重算布局；有 `viewState` 时坐标先按视图快照覆盖，紧凑视图直接走 `compactLayout()`：组内用相对缓存压成紧凑网格，组块按组序靠近拼放 → 生成整棵 SVG（节点、线、组框、链块）；`layout()` 里算出 `p.w/p.h`，所以**端口均分、连线端点、框选命中、组框包围盒、fit 全部自动跟着卡片尺寸走**，不需要各自特判。
+- **远视角 LOD**：普通视图 `viewport.scale < LOD_GROUP_SCALE(0.55)` 时 `renderGroupLod()` 只画放大的组名标签（屏幕字号 20px，`1/scale` 反缩放），节点/边/端口/链全部收起；标签仍可拖动整组、右键菜单，双击调用 `zoomToGroup()` 进入该组并恢复节点；紧凑/组视角不触发。画布里的数字刻度坐标轴与节点/组共用世界坐标，随 viewport 一起平移缩放，作为组的坐标参考。
+- **节点属性自动保存**：`propsTimer` 500ms 防抖 + 失焦/回车立即保存；自动保存走静默路径，只更新 `graph` 并 `render()`，不重拉右栏，避免输入框被替换。
 - 渲染末尾调 `paintSelection()`，把选中态以类名补上（`.picked` / `.focus` / `.edge-focus` / `.edge-dim`）。
 - **选中不改数据、只改类名**：点一下的成本是 0.4 ms 而不是整图重绘 56–89 ms。类型与样式全在 `style.css`，`nodeClass(n)` / `edgeClass(e)` 由渲染与重绘共用，不会两处漂移。
 - 渲染后建索引（连线元素表、边表、出入邻接表），拖动只重算**与该节点相连的线**和**它所在的组框/循环框**。
@@ -180,15 +189,18 @@ ConnectionString => $"Data Source={DbPath};Pooling=True";
 
 同一条路径放大到 1000 节点是 56–89 ms——所以"点一下卡一下"从来不是命中判定，是整图重建；这也是 `paintSelection()`（只改类名，0.4 ms）存在的理由。
 
-### 自动整理（按组布局）
+### 视图与组缓存（0.4.11）
 
-`arrangeByGroups()` 只算坐标，不碰语义，算完走一次 `POST /tasks/{id}/layout` 落库：
+- **原视图**＝库里那张图（`nodes.pos_x/pos_y`）。第一次做视图操作时，`ensureView()` 把当前显示坐标冻成一份工作快照；之后整理/紧凑/组视角/允许覆盖都只改快照，**原视图的节点绝对坐标不写库**。
+- **组内相对缓存**：`groupContentOrigin()` 取成员内容左上角，`deriveGroupRel()/computeGroupRel()` 产出 `[{id,dx,dy}]`；手动拖完写回 `node_groups.layout_json`，全局整理只排组、组内一律用缓存。
+- **整理**：选中组只算该组的 `groupLayered()`；全局整理按 `groupOrder()` 排块，块间 240；组内不重排。
+- **组视角/紧凑/覆盖**：`collapsedGroupIds()` 把组视角并进组的收起集合；`pillRect()` 在组视角用 `overviewPillRect()` 排网格；`layout()` 在紧凑视图直接返回 `compactLayout()`（组内网格 + 组块靠近；`allowOverlap` 默认 true，行距压成负重叠；关闭时占用槽位去重做碰撞展开）。三者都不写节点数据。
+- **图层**：`viewPayload()` 序列化坐标、组缓存、开关与视口 → `POST /api/tasks/{id}/view-layers`；切图层用 `normalizeViewPayload()` 覆盖 `state.viewState`。切图层/切任务前 `guardViewDirty()` 弹保存提醒。右栏保存按名字判断：同名或留空更新当前快照，改名字走创建接口另存一个新图层，所以多个图层可以并存；改名只传 `name`、不动 payload。
+- **导入/导出**：前端 `exportBundle()` 把 `GET graph` 的结构字段与 `viewPayload()` 打成一个 `workproto.bundle` 文件；导入走 `POST /api/import`，服务端在一个事务里新建任务、重映射节点/边/组/循环/视图 ID，并插入随包的视图图层，不覆盖旧任务。
+- **Ctrl+Z**：`pushViewHistory()` 把视图快照压栈（最多 40 步），`undoViewOperation()` 还原；只撤视图操作，不撤拖节点/建线等数据修改。
+- **只读模式**：组视角/紧凑视图里不响应拖动与连线（`viewReadOnly()`），避免"看到的坐标"和库里的位置打架；要编辑先退出视图。
 
-1. **组序**＝跨组 `transfer` 边的拓扑序（环按 seq 垫后，未分组节点当最后一列）；
-2. **一组一块，横向依次挨着放**（前后排列，不折行），块间 240；组块按最高的一块纵向居中对齐——出口接到下一个入口时看起来是一条直线；
-3. **组内**按依赖分层（最长路径），层内先按**前驱重心**定目标 y，再自上而下排开避免重叠，最后**整列按目标重心对齐**——扇出点居中、汇合点落在几个分支的中间，于是「1 → 3~4 → 1」是看得出来的沙漏。整条主线会很长（150 节点约 29000 px），全局看靠总览、细节靠平移，这是刻意分工。
-
-`fitView()` 只按**画出来的东西**算包围盒（可见节点 + 牌 + 链框）；曾经把「已收进牌里的组」的链框也算进去，包围盒虚高十倍，缩放一路掉到下限——这类"看不见的东西撑大 bbox"的 bug 只会在多组图上冒头。
+`fitView()` 在普通视图按**画出来的东西**算包围盒（可见节点 + 牌 + 链框）；LOD 远视角按组框算；曾经把「已收进牌里的组」的链框也算进去，包围盒虚高十倍，缩放一路掉到下限——这类"看不见的东西撑大 bbox"的 bug 只会在多组图上冒头。空格和「重置视图」都走这一套适配。
 
 ### 没做的
 

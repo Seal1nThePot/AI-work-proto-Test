@@ -42,7 +42,7 @@ function openTaskForm() {
   <div class="form">
     <div class="formhead"><b>新建任务</b><button type="button" id="closeForm">关闭</button></div>
     <label>标题（必填）<input id="tTitle" maxlength="120" placeholder="例如：把周报写出来" /></label>
-    <label>一行目标<input id="tGoal" placeholder="例如：给出可复核的三条结论" /></label>
+    <label>一行目标（可留空）<input id="tGoal" placeholder="可留空：例如 给出可复核的三条结论" /></label>
     <div class="actions"><button type="button" class="primary" id="submitTask">建任务</button></div>
     <div id="formResult" class="formResult"></div>
   </div>`;

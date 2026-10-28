@@ -1,6 +1,6 @@
 // ────────── 13-group.js ──────────「节点组几何与牌面」
 // 用途: 节点组：包围盒/成员/统计/被组隐藏的节点、组标签宽度、收纳牌与总览格子、组框重绘
-// 暴露: groupBounds groupTitle collapsedGroupIds groupMembers groupBoxOf groupStats OV overviewPillRect pillRect hiddenNodeIds groupChipWidth redrawGroupBox redrawBoxesFor
+// 暴露: groupBounds groupTitle nearestGroupForNode zoomToGroup collapsedGroupIds groupMembers groupBoxOf groupStats OV overviewPillRect pillRect hiddenNodeIds groupChipWidth redrawGroupBox redrawBoxesFor
 // 依赖: 00-const.js 01-state.js 02-dom.js(esc/cut)
 // 被依赖: 12-chain.js 20-render.js 30-select.js 与 app.js
 
@@ -28,8 +28,49 @@ function groupTitle(groupId) {
   return grp ? grp.title : groupId;
 }
 
+/** 从远视角双击组名进入这个组：至少把缩放拉到 LOD 阈值以上，让节点重新出现。 */
+function zoomToGroup(groupId) {
+  const b = groupBounds(groupId);
+  if (!b) return null;
+  const v = state.view || captureView();
+  const pad = 80;
+  const w = Math.max(1, b.x2 - b.x1);
+  const h = Math.max(1, b.y2 - b.y1);
+  const fit = Math.min((v.width - pad * 2) / w, (v.height - pad * 2) / h, 1);
+  const scale = Math.min(MAX_SCALE, Math.max(LOD_GROUP_SCALE + 0.06, fit));
+  const cx = (b.x1 + b.x2) / 2;
+  const cy = (b.y1 + b.y2) / 2;
+  state.viewport = { scale, tx: v.width / 2 - cx * scale, ty: v.height / 2 - cy * scale };
+  applyViewport();
+  render();
+  return state.viewport;
+}
+
+/** 未分组节点最近的一组：按节点矩形到组框的间距取最小；已在组框内距离为 0。 */
+function nearestGroupForNode(nodeId) {
+  const p = state.positions?.get(nodeId);
+  const n = (state.graph?.nodes || []).find((x) => x.id === nodeId);
+  if (!p || !n || n.groupId) return null;
+  let best = null;
+  for (const grp of state.graph?.nodeGroups || []) {
+    const b = groupBoxOf(grp.id);
+    if (!b) continue;
+    const dx = Math.max(b.x1 - (p.x + p.w), p.x - b.x2, 0);
+    const dy = Math.max(b.y1 - (p.y + p.h), p.y - b.y2, 0);
+    const distance = Math.hypot(dx, dy);
+    if (!best || distance < best.distance || (distance === best.distance && grp.id < best.id)) {
+      best = { id: grp.id, title: grp.title, distance };
+    }
+  }
+  return best;
+}
+
 function collapsedGroupIds() {
-  return new Set((state.graph?.nodeGroups || []).filter((g) => g.collapsed).map((g) => g.id));
+  const collapsed = new Set((state.graph?.nodeGroups || []).filter((g) => g.collapsed).map((g) => g.id));
+  if (typeof viewAllGroupsCollapsed === "function" && viewAllGroupsCollapsed()) {
+    for (const g of state.graph?.nodeGroups || []) collapsed.add(g.id);
+  }
+  return collapsed;
 }
 
 function groupMembers(groupId) {
@@ -81,7 +122,7 @@ function overviewPillRect(gid) {
 }
 
 function pillRect(groupId) {
-  if (state.overview) {
+  if (state.overview || (typeof viewGroupView === "function" && viewGroupView())) {
     const r = overviewPillRect(groupId);
     const outs = new Set(), ins = new Set();
     for (const e of state.graph?.edges || []) {

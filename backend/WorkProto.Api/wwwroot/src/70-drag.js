@@ -15,7 +15,8 @@ function moveNodeTo(nodeId, x, y) {
   // 图里的坐标也跟着改：render() 是按 nodes[].posX/posY 重算布局的，
   // 只改 positions 会留下「库里还是旧坐标」的状态，任何一次重绘都把节点摆回去（拖动回弹的真凶）。
   const n = state.nodesById.get(nodeId);
-  if (n) { n.posX = Math.round(x); n.posY = Math.round(y); }
+  // 视图图层里只改显示坐标，不写图里的 posX/posY——否则切回原视图时会被这次拖动污染
+  if (n && !state.viewState) { n.posX = Math.round(x); n.posY = Math.round(y); }
   const el = state.nodeEls.get(nodeId);
   if (el && el.setAttribute) el.setAttribute("transform", `translate(${x},${y})`);
   const ids = state.incident.get(nodeId);
@@ -178,6 +179,7 @@ function scheduleDragFrame() {
 }
 
 function startDrag(nodeId, ev) {
+  if (typeof viewReadOnly === "function" && viewReadOnly()) { setSelection([nodeId]); return; }
   const shift = !!ev.shiftKey;
   // Shift 按住时不动选区：挪完没拖动才算「Shift 点击＝加/减选」
   if (!shift && !state.selectedIds.has(nodeId)) setSelection([nodeId]);

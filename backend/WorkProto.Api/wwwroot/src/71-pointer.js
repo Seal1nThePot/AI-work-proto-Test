@@ -20,6 +20,11 @@ function onSvgPointerDown(ev) {
   const groupHit = chipEl || edgeEl;
   if (groupHit) {
     const groupId = chipEl ? chipEl.getAttribute("data-nodegroup-chip") : edgeEl.getAttribute("data-nodegroup-edge");
+    if (viewReadOnly()) {
+      if (ev.button === 0) selectGroup(groupId);
+      else showToast("视图模式下只读：先退出组视角/紧凑视图再改分组", false);
+      return;
+    }
     if (ev.button === 2) {
       openGroupMenu(groupId, ev);
       if (ev.preventDefault) ev.preventDefault();
@@ -40,6 +45,11 @@ function onSvgPointerDown(ev) {
   if (pillEl) {
     const groupId = pillEl.getAttribute("data-nodegroup-pill");
     if (ev.button !== 0 && ev.button !== 2) return;
+    if (viewReadOnly()) {
+      if (ev.button === 0) selectGroup(groupId);
+      else showToast("视图模式下只读：先退出组视角/紧凑视图再拖组", false);
+      return;
+    }
     const members = groupMembers(groupId).map((x) => x.id);
     if (!members.length) return;
     setSelection(members);
@@ -67,6 +77,12 @@ function onSvgPointerDown(ev) {
   const nodeId = nodeEl ? nodeEl.getAttribute("data-node") : null;
   if (!nodeId) {
     if (ev.button === 0) startMarquee(ev);                       // 空白左键＝框选
+    return;
+  }
+
+  if (viewReadOnly()) {
+    if (ev.button === 0) setSelection([nodeId]);
+    else showToast("视图模式下只读：先退出组视角/紧凑视图再连线", false);
     return;
   }
 
@@ -226,6 +242,7 @@ function nearestPortIndex(nodeId, side, ev) {
 }
 
 function startConnect(nodeId, ev, portIndex = 0) {
+  if (viewReadOnly()) { showToast("视图模式下只读：先退出组视角/紧凑视图再连线", false); return; }
   const kind = ev && ev.shiftKey ? "loop" : "transfer";
   const p = state.positions.get(nodeId);
   const origin = p ? portPoint(kind === "loop" ? "bottom" : "out", p, portIndex, kind === "loop" ? 1 : p.outPorts || 1) : null;

@@ -2,13 +2,14 @@
 
 入口：[README](../README.md) ｜ 架构：[architecture.md](architecture.md) ｜ 画布功能：[features.md](features.md) ｜ 验收：[acceptance.md](acceptance.md)
 
-端点表在 `Program.cs`，业务按域分在 15 个 `Proto.*.cs`（`partial class Proto`，导航见 `backend\WorkProto.Api\索引.md`）；本文件是"调什么、什么情况下拒绝、拒绝码叫什么"的唯一正文。
+端点表在 `Program.cs`（48 个端点），业务按域分在 16 个 `Proto.*.cs`（`partial class Proto`，导航见 `backend\WorkProto.Api\索引.md`）；本文件是"调什么、什么情况下拒绝、拒绝码叫什么"的唯一正文。
 
 ## 一、动作与端点
 
 | 动作 | 端点 | 要点 |
 | --- | --- | --- |
 | 建图 | `POST /api/tasks`、`DELETE /api/tasks/{id}` | 一次贴齐节点 / 边 / 规则组 / 循环；原型清理用删除 |
+| 导入 bundle | `POST /api/import` | 新建任务并重映射节点/边/组/循环/视图 ID；恢复工作流结构与当前视图，不恢复执行状态；格式为 `workproto.bundle`（version 1） |
 | 认领与排队 | `POST /api/tasks/{id}/claim`、`POST /api/tasks/{id}/release` | 同一 agent 可持多个任务，**同时只跑一个**，其余 `queued`；释放后按 `seq` 自动接上 |
 | 放行 | `POST /api/nodes/{id}/start`、`/complete`、`/rework`、`POST /api/tasks/{id}/pick` | 门判 `all / any / k_of_n / pick_one`；放行写 `releases`，幂等靠唯一键；不满足返回 409 + 缺哪条入边 |
 | 检查点 | `POST /api/tasks/{id}/checkpoint`、`POST /api/cycles/{id}/raise`、`POST /api/nodes/{id}/unblock` | 三句话 + 起止时间 + verdict 落库；轮次满先出检查点，判无进展才 `blocked` |
@@ -16,9 +17,11 @@
 | 图增量 | `POST /api/tasks/{id}/nodes`、`/edges`、`/cycles`、`DELETE /api/nodes/{id}` | 往已有图里加节点 / 加线 / 声明循环 / 删掉未起步的节点；**校验与建图同一套**（见第二节） |
 | 画布 | `POST /api/nodes/{id}/move`、`POST /api/tasks/{id}/layout`、`POST /api/nodes/{id}/ports` | 单个/批量落坐标（框选一起拖只发一次请求）；改接线口数量（1–12）；位置与口数是展示/接线状态，不写 events 业务语义 |
 | 节点属性 | `POST /api/nodes/{id}/props` | 改标题 / 一行目标 / 类型；只改给了的项，写一条 `node-update` 事件。循环区不在这里改（见 [features.md](features.md) 第八节·循环区并进节点组） |
-| 节点组 | `POST /api/tasks/{id}/node-groups`、`POST /api/node-groups/{id}/collapse`、`POST/DELETE /api/node-groups/{id}/loop`、`DELETE /api/node-groups/{id}[?withNodes=true]` | 分组（`node_groups` + `nodes.group_id` + `collapsed`）**同时就是循环区的载体**：`/loop` 声明 head/tail/上限并自动连回边，`DELETE /loop` 撤销；删组默认只解散，`withNodes=true` 才连节点一起删且要求整组都删得起；循环组要先撤循环才能删 |
+| 节点组 | `POST /api/tasks/{id}/node-groups`、`POST /api/node-groups/{id}/nodes/{nodeId}`、`POST /api/node-groups/{id}/collapse`、`POST/DELETE /api/node-groups/{id}/loop`、`DELETE /api/node-groups/{id}[?withNodes=true]` | 分组（`node_groups` + `nodes.group_id` + `collapsed`）**同时就是循环区的载体**：`/nodes/{nodeId}` 把未分组单节点并入已有组（同组重复调用幂等）；`/loop` 声明 head/tail/上限并自动连回边，`DELETE /loop` 撤销；删组默认只解散，`withNodes=true` 才连节点一起删且要求整组都删得起；循环组要先撤循环才能删 |
 | 节点收纳 | `POST /api/nodes/{id}/compact` | `level` 三档：0 完整 / 1 仅标题 / 2 仅关键字（一行目标）；纯看图状态，不写 events；也收 `collapsed=true` 当 1 用 |
 | 连线 | `GET/POST/DELETE /api/edges/{id}`、`POST /api/edges/{id}/confirm` | 点连线可改走向/类型/端口/门控；门控 `auto`（上游做完就放行）或 `human`（还要人点头）；人工门控未确认 → 不写放行记录，拒因 `gate-needs-confirm`；已放行过的线只允许放宽门控与改备注 |
+| 组布局缓存 | `POST /api/node-groups/{id}/layout` | 存组内**相对坐标**（dx/dy，原点为成员内容左上角）；只收本组成员，最多 500 个；纯看图状态，不写 events |
+| 视图图层 | `GET/POST /api/tasks/{id}/view-layers`、`GET/POST/DELETE /api/view-layers/{id}` | 命名快照：紧凑/组视角/是否允许覆盖、展开收起、坐标、组内缓存、视口；列表回带 `modes` 标签（`group-view` / `compact` / `stack`）；同一任务可保存任意多个；payload 必须合法 JSON（≤4MB）；默认名 `图层1/图层2…`；**只存视图，不复制节点结构** |
 | 预设 | `GET /api/templates`、`POST/DELETE /api/templates/nodes|groups`、`POST /api/tasks/{id}/apply-node-template|apply-group-template` | 模板库跨任务：节点预设（标题/目标/类型/口数）与组预设（节点 + 组名 + 组内 transfer 线，按相对坐标）。套用组预设＝整块落节点＋补组内连线＋圈成一个组 |
 | 体检 | `GET /api/health` | 脚本起来前探活用 |
 
@@ -57,8 +60,10 @@
 | `cycle-exists` / `group-is-loop` | 同一个组重复声明循环；直接删循环组 | 409 |
 | `node-has-edges` / `node-not-pending` | 删节点时挂着线 / 已经起步 | 409 |
 | `node-group-needs-two` / `node-group-not-deletable` | 建组不足两个成员；`withNodes=true` 时组里有删不起的（整批不动） | 400 / 409 |
+| `node-already-grouped` | 把已在别的组里的节点再加入另一组 | 409 |
 | `port-out-of-range` / `port-in-use` | 取不存在的接线口 / 把口缩到还有线挂着的口以下 | 400 / 409 |
-| `title-required` / `kind-invalid` / `bad-request` | 参数不合规 | 400 |
+| `title-required` / `kind-invalid` / `bad-request` | 参数不合规（含图层 payload 非 JSON、超过 4MB、图层名为空） | 400 |
+| `view-layer-not-found` | 视图图层不存在 | 404 |
 | `unknown-node` | 端点不在这个任务里 | 400 |
 
 ## 五、文档没定死、这里替你钉住的五处
@@ -68,3 +73,11 @@
 3. **择一未选分支落 `skipped` 的条件**：该节点已 `approved`、且它在这条边之外的出边要么没有、要么都指向已决的择一组。别的分支还有去处就不动它。
 4. **`nothing-to-do` 分两种**：有 `blocked` → `nothing-to-do:blocked`；只是全在等上游 → `nothing-to-do:waiting`，任务保持 `open`，不产生僵尸租约。
 5. **放行幂等与循环不被误去重**按签字实现：`UNIQUE(edge_id,to_node_id,node_attempt,cycle_epoch)` + `INSERT OR IGNORE`；`node_attempt = 目标节点 attempt+1`，循环每轮 `cycle_epoch+1`。`target_step_id TEXT NOT NULL DEFAULT ''` 已按②预留，一期恒空。
+
+## 六、视图图层与组缓存（0.4.11）
+
+- **组缓存是相对坐标**：`node_groups.layout_json` 存 `[{id,dx,dy}]`，`dx/dy` 相对组内容左上角；组移动时相对关系不变。前端按成员 id 取用，缺失成员直接忽略。
+- **整理分两种**：选中组只整理该组；全局整理按依赖排组、组内一律用各自缓存（没有缓存才现算一份并写回）。整理是视图操作，原视图的节点绝对坐标不写库；`Ctrl+Z` 可撤销。
+- **图层是看法不是数据**：`view_layers.payload_json` 只放显示坐标、组内缓存、模式开关与视口；节点、连线、组的结构仍只有一份。切图层不改节点表。
+- **未保存提醒**：当前视图有改动时，切图层/切任务会弹「保存为图层 / 不保存 / 取消」；不保存则丢弃这次视图操作，已保存图层留在右栏。
+- **不做的**：方案分支的结构化探索、连线直接接节点组——按主人要求顺延到 0.4.12。

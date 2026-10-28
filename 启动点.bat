@@ -59,10 +59,10 @@ exit /b 1
 :check
 call :build || exit /b 1
 echo.
-echo ===== 1/3 接口验收（160） =====
+echo ===== 1/3 接口验收（176） =====
 pwsh -NoProfile -File "verify\run-acceptance.ps1" || goto :checkfail
 echo.
-echo ===== 2/3 页面冒烟（192） =====
+echo ===== 2/3 页面冒烟（231） =====
 pwsh -NoProfile -File "verify\run-ui-smoke.ps1" || goto :checkfail
 echo.
 echo ===== 3/3 拆分守恒（16） =====

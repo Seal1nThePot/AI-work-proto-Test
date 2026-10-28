@@ -10,6 +10,16 @@ const state = {
   graph: null,
   overview: false,           // 总览模式：组收成牌、牌子按组的先后排成格子（纯前端看法）
   overviewOrder: [],
+  // 视图状态：null＝原视图（库里那张图）；对象＝工作视图/图层快照（只存看法，不写节点数据）
+  viewState: null,
+  viewLayerId: null,         // 当前已保存图层 id；null＝原视图或未保存工作视图
+  viewDirty: false,
+  viewLayers: [],
+  viewHistory: [],           // Ctrl+Z 的视图撤销栈（只放视图操作）
+  viewPromptChoice: null,    // 测试/脚本可直接指定 save/discard/cancel，跳过弹窗
+  viewPromptClick: null,
+  propsTimer: null,          // 节点属性自动保存的防抖计时器
+  lodActive: false,          // 当前是否处于“只画组名”的远视角
   selected: null,            // 当前看详情的那个节点
   selectedEdge: null,        // 当前选中的那条连线（点线看门控）
   selectedGroup: null,       // 当前选中的节点组（点组标签/收纳牌）

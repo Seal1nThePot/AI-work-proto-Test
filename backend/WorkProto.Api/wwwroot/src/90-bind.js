@@ -40,6 +40,14 @@ function bindSvgEvents() {
   svg.addEventListener("dblclick", (e) => {
     const t = e.target;
     const closest = (sel) => (t && t.closest ? t.closest(sel) : null);
+    const lodChip = closest("[data-nodegroup-chip]");
+    if (state.lodActive) {
+      if (lodChip) {
+        if (e.preventDefault) e.preventDefault();
+        zoomToGroup(lodChip.getAttribute("data-nodegroup-chip"));
+      }
+      return;                                   // 远视角不在这里建节点
+    }
     const chainEl = closest("[data-chain]");
     if (chainEl) { if (e.preventDefault) e.preventDefault(); toggleChain(chainEl.getAttribute("data-chain")); return; }
     const nodeEl = closest("[data-node]");
@@ -62,11 +70,32 @@ function bindSvgEvents() {
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") { closeContextMenu(); return; }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) {
+        if (isTypingTarget(e.target)) return;          // 输入框里的撤销交给浏览器
+        if (!state.viewHistory.length) return;
+        if (e.preventDefault) e.preventDefault();
+        undoViewOperation();
+        return;
+      }
       if (e.key === "Delete" || e.key === "Del") {
         if (isTypingTarget(e.target)) return;         // 输入框里 Delete 是删字
         if (!state.selected && !state.selectedEdge && !state.selectedGroup && !state.selectedChain && !state.selectedIds.size) return;
         if (e.preventDefault) e.preventDefault();
         deleteSelected();
+        return;
+      }
+      if (e.key === " " || e.code === "Space") {
+        const tag = e.target && e.target.tagName;
+        if (isTypingTarget(e.target) || tag === "BUTTON") return;
+        if (e.preventDefault) e.preventDefault();
+        fitView();
+        return;
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "g" || e.key === "G")) {
+        if (isTypingTarget(e.target)) return;
+        if (!state.selected) return;
+        if (e.preventDefault) e.preventDefault();
+        addNodeToNearestGroup(state.selected);
       }
     });
   }

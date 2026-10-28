@@ -64,7 +64,7 @@ let frameRequests = 0;
 const fakeSetTimeout = (cb) => { frameRequests += 1; return frameRequests; };
 const load = new Function(
   'document', 'fetch', 'setInterval', 'clearTimeout', 'setTimeout',
-  src + '\n;return { state, loadTasks, loadGraph, refresh, render, layout, portPoint, portCircles, edgePath, startConnect, svgPoint, worldToScreen, captureView, scheduleDragFrame, applyDragFrame, nearestPortIndex, saveNodePorts, saveLayout, saveNodePosition, nodesInRect, zoomAt, fitView, applyViewport, setSelection, toggleSelection, startDrag, moveNodeTo, startMarquee, updateMarquee, endMarquee, openTaskForm, submitTask, openNodeForm, submitNode, requestNodeAt, openEdgeForm, submitEdge, fillPortSelect, createTask, connectNodes, selectNode, closeForm, snapX, drawAlignGuide, onSvgPointerDown, onSvgPointerMove, onSvgPointerUp, quickAddNode, saveNodeProps, deleteNode, createNodeGroup, deleteNodeGroup, openContextMenu, closeContextMenu, openNodeMenu, openGroupMenu, groupBounds, groupTitle, focusProps, redrawGroupBox, redrawBoxesFor, collapseGroup, pillRect, groupMembers, hiddenNodeIds, collapsedGroupIds, snapAxis, setNodeCompact, selectEdge, renderEdgePanel, saveEdge, confirmEdgeGate, removeEdge, selectGroup, renderGroupPanel, deleteSelected, deleteNodes, isTypingTarget, openTemplatePanel, applyNodeTemplate, applyGroupTemplate, saveNodeTemplate, saveGroupTemplate, deleteNodeTemplate, deleteGroupTemplate, centerWorld, collapseChain, collapseChainOfNode, toggleChain, selectChain, renderChainPanel, toggleNodeCompact, toggleGroupCollapsed, walkChainLocal, graphChains, chainRect, chainMembers, chainTitleText, chainFrameRect, chainIsCollapsed, chainIdOf, openChainMenu };'
+  src + '\n;return { state, loadTasks, loadGraph, refresh, render, layout, portPoint, portCircles, edgePath, startConnect, svgPoint, worldToScreen, captureView, scheduleDragFrame, applyDragFrame, nearestPortIndex, saveNodePorts, saveLayout, saveNodePosition, nodesInRect, zoomAt, fitView, applyViewport, setSelection, toggleSelection, startDrag, moveNodeTo, startMarquee, updateMarquee, endMarquee, openTaskForm, submitTask, openNodeForm, submitNode, requestNodeAt, openEdgeForm, submitEdge, fillPortSelect, createTask, connectNodes, selectNode, closeForm, snapX, drawAlignGuide, onSvgPointerDown, onSvgPointerMove, onSvgPointerUp, quickAddNode, saveNodeProps, deleteNode, createNodeGroup, addNodeToGroup, addNodeToNearestGroup, deleteNodeGroup, openContextMenu, closeContextMenu, openNodeMenu, openGroupMenu, groupBounds, groupTitle, nearestGroupForNode, zoomToGroup, focusProps, redrawGroupBox, redrawBoxesFor, collapseGroup, pillRect, groupMembers, hiddenNodeIds, collapsedGroupIds, snapAxis, setNodeCompact, selectEdge, renderEdgePanel, saveEdge, confirmEdgeGate, removeEdge, selectGroup, renderGroupPanel, deleteSelected, deleteNodes, isTypingTarget, openTemplatePanel, applyNodeTemplate, applyGroupTemplate, saveNodeTemplate, saveGroupTemplate, deleteNodeTemplate, deleteGroupTemplate, centerWorld, collapseChain, collapseChainOfNode, toggleChain, selectChain, renderChainPanel, toggleNodeCompact, toggleGroupCollapsed, walkChainLocal, graphChains, chainRect, chainMembers, chainTitleText, chainFrameRect, chainIsCollapsed, chainIdOf, openChainMenu, arrangeGroup, arrangeAllGroups, compactLayout, viewCompactLevel, viewGroupView, viewCompactView, viewAllGroupsCollapsed, toggleGroupView, toggleCompactView, toggleAllowOverlap, saveViewLayer, switchViewLayer, loadViewLayers, deleteViewLayerById, undoViewOperation, resetViewState, openViewMenu, renderViewPanel, viewPayload, guardViewDirty, exportBundle, importBundleData, importBundleFile };'
 );
 const app = load(globalThis.document, fetchShim, () => 0, () => {}, fakeSetTimeout);
 
@@ -99,6 +99,8 @@ check('准备任务', created.status === 201, `status=${created.status}`);
 app.state.taskId = 't-ui';
 await app.refresh();
 check('页面载入任务图', (app.state.graph?.nodes || []).length === 1, `nodes=${(app.state.graph?.nodes || []).length}`);
+check('平面直角坐标系随节点/组一起平移缩放',
+  /<g id="viewport"[^>]*>\s*<g class="coord-axes"/.test(el('graph').innerHTML));
 
 // 认领 / 完工必须发生在下游节点出现之前，否则它会在认领时被一起起步
 await call('POST', '/api/tasks/t-ui/claim', { agent: 'ui' });
@@ -143,10 +145,12 @@ check('普通线自环被拒（loop-needs-cycle）', !selfLoop.ok && selfLoop.bo
 app.openTaskForm();
 check('点「新建任务」出表单', el('formHost').innerHTML.includes('新建任务') && !!el('tTitle'));
 el('tTitle').value = 'UI 任务二';
-el('tGoal').value = '空图起手';
+el('tGoal').value = '';
 await app.submitTask();
 const newId = app.state.taskId;
-check('建任务后切到新任务', newId && newId !== 't-ui' && app.state.tasks.some((t) => t.id === newId), `taskId=${newId}`);
+check('建任务后切到新任务（目标允许为空）',
+  newId && newId !== 't-ui' && app.state.tasks.some((t) => t.id === newId) && app.state.graph?.task?.goalLine === '',
+  `taskId=${newId} goal=${app.state.graph?.task?.goalLine}`);
 check('新任务是空图（0 节点）', (app.state.graph?.nodes || []).length === 0, `nodes=${(app.state.graph?.nodes || []).length}`);
 check('建任务后表单清空并给下一步提示', el('tTitle').value === '' && /双击空白/.test(el('formResult').innerHTML));
 
@@ -197,7 +201,11 @@ check('底部端口留给回边', botPt.x === 207 && botPt.y === 288, JSON.strin
 
 const d1 = app.edgePath({ x: 0, y: 0, w: 214, h: 88 }, { x: 400, y: 300, w: 214, h: 88 }, { kind: 'transfer' });
 const d2 = app.edgePath({ x: 0, y: 120, w: 214, h: 88 }, { x: 400, y: 300, w: 214, h: 88 }, { kind: 'transfer' });
-check('连线端点跟着节点坐标算（拖动即可实时重算）', d1 !== d2, `${d1.slice(0, 24)}… vs ${d2.slice(0, 24)}…`);
+const dStraight = app.edgePath({ x: 0, y: 0, w: 214, h: 88 }, { x: 400, y: 0, w: 214, h: 88 }, { kind: 'transfer' });
+const dCurve = app.edgePath({ x: 0, y: 0, w: 214, h: 88 }, { x: 400, y: 240, w: 214, h: 88 }, { kind: 'transfer' });
+check('连线端点跟着节点坐标算；小角度走直线，大角度才弯',
+  d1 !== d2 && dStraight.includes(' L ') && dCurve.includes(' C '),
+  `${d1.slice(0, 24)}… vs ${d2.slice(0, 24)}… straight=${dStraight.slice(0, 20)} curve=${dCurve.slice(0, 20)}`);
 
 const bPos = app.state.positions.get(b.id);
 app.startConnect(b.id, { shiftKey: false, preventDefault() { } });
@@ -281,9 +289,24 @@ const anchorScreen = app.worldToScreen(zoomIn.anchor);
 check('缩放时锚点不动（同一世界坐标仍落在光标处）',
   Math.abs(anchorScreen.x - 400) < 0.01 && Math.abs(anchorScreen.y - 300) < 0.01,
   `scale=${zoomIn.scale.toFixed(2)} screen=(${anchorScreen.x.toFixed(1)},${anchorScreen.y.toFixed(1)})`);
-check('滚轮向上放大且在限内', zoomIn.scale > 1 && zoomIn.scale <= 2.5, `scale=${zoomIn.scale.toFixed(2)}`);
+check('滚轮向上放大且在限内', zoomIn.scale > 1, `scale=${zoomIn.scale.toFixed(2)}`);
+const zoomMax = app.zoomAt(400, 300, -8000);
+check('放大可以突破旧的 2.5 上限', zoomMax.scale > 2.5, `scale=${zoomMax.scale.toFixed(0)}`);
+app.state.viewport = { scale: 1, tx: 0, ty: 0 };
+app.state.view = null;
+app.captureView();
 const zoomOut = app.zoomAt(400, 300, 8000);
-check('滚轮向下缩小有下限（大图要能缩到 0.2）', zoomOut.scale >= 0.2 && zoomOut.scale <= 1, `scale=${zoomOut.scale.toFixed(2)}`);
+check('缩小可以突破旧的 0.2 下限', zoomOut.scale < 0.2, `scale=${zoomOut.scale}`);
+app.state.viewport = { scale: 0.01, tx: -9999, ty: -9999 };
+app.state.view = null;
+app.captureView();
+let spacePrevented = false;
+globalThis.document.onkeydown({
+  key: " ", code: "Space", target: { tagName: "BODY" }, preventDefault() { spacePrevented = true; }
+});
+check('空格复原到工作流视图中心',
+  spacePrevented && app.state.viewport.tx !== -9999 && app.state.viewport.scale > 0.01,
+  `scale=${app.state.viewport.scale.toFixed(2)} tx=${Math.round(app.state.viewport.tx)}`);
 app.state.viewport = { scale: 2, tx: 10, ty: 20 };
 app.state.view = null;
 app.captureView();
@@ -552,6 +575,18 @@ const freshQuick = (await call('GET', '/api/tasks/t-ui/graph')).body.nodes.find(
 check('改完刷新图还是新名字新类型',
   freshQuick.title === '改名后的节点' && freshQuick.kind === 'review_human' && freshQuick.goalLine === '收三份材料',
   `${freshQuick.title}/${freshQuick.kind}`);
+
+el('nTitle').value = '自动同步标题';
+const autoTitle = await el('nTitle').onchange();
+el('nGoal').value = '自动同步目标';
+el('nKind').value = 'work';
+const autoRest = await el('nKind').onchange();
+const autoNode = app.state.graph.nodes.find((n) => n.id === quickNode.id);
+check('属性改动自动同步（不用点保存）',
+  autoTitle.ok && autoRest.ok && autoNode?.title === '自动同步标题' &&
+  autoNode?.goalLine === '自动同步目标' && autoNode?.kind === 'work' &&
+  /已自动保存/.test(el('propsResult').innerHTML),
+  `title=${autoNode?.title} goal=${autoNode?.goalLine} kind=${autoNode?.kind}`);
 
 el('nTitle').value = '   ';
 const badProps = await app.saveNodeProps(freshQuick.id);
@@ -1002,6 +1037,9 @@ await app.deleteNodeTemplate(listAfter.nodeTemplates?.[0]?.id || 'none');
 
 // ---------- 26. 双击标题＝快收快开（节点 / 组 / 链）----------
 await app.refresh();
+app.state.viewport = { scale: 1, tx: 0, ty: 0 };
+app.state.view = null;
+app.render();
 const dblTarget = (attr, id) => ({ closest: (sel) => (sel === attr ? { getAttribute: () => id } : null) });
 const dblClick = (target, clientX = 60, clientY = 60) =>
   el('graph').ondblclick({ target, clientX, clientY, preventDefault() { } });
@@ -1264,6 +1302,272 @@ check('点空白处＝取消选中（组没选中、右栏清空、节点还在�
   `selectedGroup=${app.state.selectedGroup} side=${el('sideBody').innerHTML.length}`);
 
 await app.deleteNodeGroup(gid28, false);
+
+// ---------- 节点加入最近组：右键 / G 快捷键 ----------
+const nearTask = await call('POST', '/api/tasks', {
+  id: 't-near', title: '加入最近组', goalLine: '新节点落进组框内',
+  nodes: [
+    { id: 'G-A', title: '组内甲', seq: 1, x: 100, y: 100 },
+    { id: 'G-B', title: '组内乙', seq: 2, x: 360, y: 100 },
+    { id: 'G-C', title: '新节点丙', seq: 3, x: 180, y: 160 },
+    { id: 'G-D', title: '新节点丁', seq: 4, x: 220, y: 180 }
+  ],
+  edges: [], groups: [], cycles: []
+});
+check('加入最近组测试任务建成', nearTask.status === 201, `status=${nearTask.status}`);
+const nearGroup = await call('POST', '/api/tasks/t-near/node-groups', { title: '最近组', nodeIds: ['G-A', 'G-B'] });
+const nearGid = nearGroup.body?.id;
+app.state.taskId = 't-near';
+app.state.drag = null; app.state.marquee = null; app.state.pan = null; app.state.connect = null;
+await app.refresh();
+await app.selectNode('G-C');
+const near = app.nearestGroupForNode('G-C');
+app.openNodeMenu('G-C', { clientX: 10, clientY: 10 });
+const hasNearItem = app.state.ctxItems.some((i) => /加入最近组/.test(i.label));
+app.closeContextMenu();
+const nearJoined = await app.addNodeToNearestGroup('G-C');
+check('右键菜单能把组框内的新节点加进最近组',
+  near?.id === nearGid && near?.distance === 0 && hasNearItem && nearJoined.ok &&
+  app.state.graph.nodes.find((n) => n.id === 'G-C')?.groupId === nearGid,
+  `target=${near?.id} dist=${near?.distance} joined=${nearJoined.status}`);
+
+app.state.selected = 'G-D';
+app.state.nodesById = new Map(app.state.graph.nodes.map((n) => [n.id, n]));
+globalThis.document.onkeydown({
+  key: 'g', target: { tagName: 'BODY' }, ctrlKey: false, metaKey: false, altKey: false, preventDefault() { }
+});
+await new Promise((resolve) => setTimeout(resolve, 700));
+check('G 快捷键把选中节点加进最近组',
+  app.state.graph.nodes.find((n) => n.id === 'G-D')?.groupId === nearGid,
+  `groupId=${app.state.graph.nodes.find((n) => n.id === 'G-D')?.groupId}`);
+
+// ---------- 视图：组缓存 / 整理 / 紧凑 / 组视角 / 堆叠 / 图层 / 撤销 ----------
+const viewTask = await call('POST', '/api/tasks', {
+  id: 't-view', title: '视图图层测试', goalLine: '验 0.4.11 视图操作',
+  nodes: [
+    { id: 'V-A1', title: 'A1 需求', seq: 1, x: 100, y: 100 },
+    { id: 'V-A2', title: 'A2 设计', seq: 2, x: 420, y: 320 },
+    { id: 'V-A3', title: 'A3 实现', seq: 3, x: 140, y: 560 },
+    { id: 'V-B1', title: 'B1 测试', seq: 4, x: 900, y: 180 },
+    { id: 'V-B2', title: 'B2 归档', seq: 5, x: 1180, y: 420 }
+  ],
+  edges: [
+    { id: 'EV-1', from: 'V-A1', to: 'V-A2', kind: 'transfer' },
+    { id: 'EV-2', from: 'V-A2', to: 'V-A3', kind: 'transfer' },
+    { id: 'EV-3', from: 'V-A1', to: 'V-A3', kind: 'transfer' },
+    { id: 'EV-4', from: 'V-A3', to: 'V-B1', kind: 'transfer' },
+    { id: 'EV-5', from: 'V-B1', to: 'V-B2', kind: 'transfer' }
+  ],
+  groups: [], cycles: []
+});
+check('视图测试任务建成', viewTask.status === 201, `status=${viewTask.status}`);
+app.state.taskId = 't-view';
+app.state.drag = null; app.state.marquee = null; app.state.pan = null; app.state.connect = null;
+await app.refresh();
+const gAv = await app.createNodeGroup(['V-A1', 'V-A2', 'V-A3'], 'A 组');
+const gBv = await app.createNodeGroup(['V-B1', 'V-B2'], 'B 组');
+const gidA = gAv.body && gAv.body.id, gidB = gBv.body && gBv.body.id;
+await app.refresh();
+const basePos = new Map(app.state.graph.nodes.map((n) => [n.id, { x: n.posX, y: n.posY }]));
+
+const arranged = app.arrangeGroup(gidA);
+check('整理选中组：只动 A 组，B 组坐标不变',
+  arranged.ok && app.state.viewState &&
+  ['V-A1', 'V-A2', 'V-A3'].some((id) => app.state.positions.get(id).x !== basePos.get(id).x || app.state.positions.get(id).y !== basePos.get(id).y) &&
+  ['V-B1', 'V-B2'].every((id) => app.state.positions.get(id).x === basePos.get(id).x && app.state.positions.get(id).y === basePos.get(id).y),
+  `dirty=${app.state.viewDirty} A1=${JSON.stringify(app.state.positions.get('V-A1'))}`);
+check('整理后组内相对缓存写进图（3 个成员）',
+  (app.state.graph.nodeGroups.find((g) => g.id === gidA).layout || []).length === 3,
+  JSON.stringify(app.state.graph.nodeGroups.find((g) => g.id === gidA).layout));
+check('整理后的组内相对坐标都是有效数字',
+  (app.state.graph.nodeGroups.find((g) => g.id === gidA).layout || []).every((it) => Number.isFinite(it.dx) && Number.isFinite(it.dy)) &&
+  Number.isFinite(app.state.positions.get('V-A1').x) && Number.isFinite(app.state.positions.get('V-A1').y),
+  `A1=${JSON.stringify(app.state.positions.get('V-A1'))}`);
+const baseAfterArrange = (await call('GET', '/api/tasks/t-view/graph')).body.nodes;
+check('整理不写节点绝对坐标（原视图还在）',
+  baseAfterArrange.find((n) => n.id === 'V-A1').posX === 100 && baseAfterArrange.find((n) => n.id === 'V-A1').posY === 100,
+  `A1=(${baseAfterArrange.find((n) => n.id === 'V-A1').posX},${baseAfterArrange.find((n) => n.id === 'V-A1').posY})`);
+
+app.undoViewOperation();
+check('Ctrl+Z 撤回整理（视图回到原视图）',
+  app.state.viewState === null && app.state.viewDirty === false && app.state.viewHistory.length === 0,
+  `view=${!!app.state.viewState} dirty=${app.state.viewDirty}`);
+
+const allArr = app.arrangeAllGroups();
+check('全局整理：两块都排开、组内仍用缓存',
+  allArr.ok && app.state.viewState && ['V-A1', 'V-A2', 'V-A3', 'V-B1', 'V-B2'].every((id) => !!app.state.viewState.positions[id]),
+  `blocks=${allArr.blocks}`);
+check('全局整理后组内相对关系保留',
+  (() => {
+    const rel = app.state.viewState.groupLayouts[gidA] || [];
+    const by = new Map(rel.map((r) => [r.id, r]));
+    return by.get('V-A3').dx >= 0 && by.get('V-A2').dy >= 0;
+  })(), JSON.stringify(app.state.viewState.groupLayouts[gidA]));
+
+app.state.viewport = { scale: 1, tx: 0, ty: 0 };
+app.state.view = null;
+app.render();
+check('组视角：所有组收成牌、跨组线成束',
+  (app.toggleGroupView(), app.viewGroupView() && app.viewAllGroupsCollapsed() && app.state.pills.size === 2 && /data-nodegroup-pill=/.test(el('graph').innerHTML) && /edge-bundle/.test(el('graph').innerHTML)),
+  `pills=${app.state.pills.size}`);
+app.toggleGroupView();
+app.state.viewport = { scale: 1, tx: 0, ty: 0 };
+app.state.view = null;
+app.render();
+check('再点组视角＝回到节点视图', !app.viewGroupView() && app.state.hiddenIds.size === 0);
+
+app.toggleCompactView();
+const ca = ['V-A1', 'V-A2', 'V-A3'].map((id) => app.state.positions.get(id));
+check('紧凑视图：组内按缓存排成横向链，不再一列竖排',
+  app.viewCompactView() && app.state.viewState?.allowOverlap === true &&
+  ca[0].x < ca[1].x && ca[1].x < ca[2].x &&
+  ca[0].y === ca[1].y && ca[1].y === ca[2].y && ca[0].w === 140 &&
+  /compact-title/.test(el('graph').innerHTML),
+  `x=${ca.map((p) => p.x).join(',')} y=${ca.map((p) => p.y).join(',')} overlap=${app.state.viewState?.allowOverlap}`);
+check('组块之间距离足够近',
+  (() => {
+    const aRight = Math.max(...['V-A1', 'V-A2', 'V-A3'].map((id) => app.state.positions.get(id).x + app.state.positions.get(id).w));
+    const bLeft = Math.min(...['V-B1', 'V-B2'].map((id) => app.state.positions.get(id).x));
+    return bLeft > aRight && bLeft - aRight < 140;
+  })(), `gap=${Math.min(...['V-B1', 'V-B2'].map((id) => app.state.positions.get(id).x)) - Math.max(...['V-A1', 'V-A2', 'V-A3'].map((id) => app.state.positions.get(id).x + app.state.positions.get(id).w))}`);
+
+const beforeDrag = app.state.drag;
+app.startDrag('V-A1', { shiftKey: false, preventDefault() { } });
+check('紧凑视图只读：不能拖节点', app.state.drag === null || app.state.drag === beforeDrag, `drag=${!!app.state.drag}`);
+app.undoViewOperation();
+check('Ctrl+Z 撤回紧凑视图', !app.viewCompactView());
+
+app.toggleCompactView();
+check('默认允许覆盖：组内卡片可以压住', app.state.viewState?.allowOverlap === true &&
+  app.state.positions.get('V-B2').y - app.state.positions.get('V-B1').y === 26,
+  `gap=${app.state.positions.get('V-B2').y - app.state.positions.get('V-B1').y}`);
+app.toggleAllowOverlap();
+const bGapNo = app.state.positions.get('V-B2').y - app.state.positions.get('V-B1').y;
+const overlaps = (() => {
+  const rs = [...app.state.positions.entries()].map(([id, p]) => ({ id, x: p.x, y: p.y, w: p.w, h: p.h }));
+  let n = 0;
+  for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+    const a = rs[i], b = rs[j];
+    if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) n += 1;
+  }
+  return n;
+})();
+const frameOverlaps = (() => {
+  const groups = app.state.graph.nodeGroups || [];
+  let n = 0;
+  for (const g of groups) {
+    const b = app.groupBounds(g.id);
+    if (!b) continue;
+    for (const [id, p] of app.state.positions) {
+      const owner = app.state.graph.nodes.find((x) => x.id === id)?.groupId;
+      if (owner === g.id) continue;
+      if (p.x < b.x2 && b.x1 < p.x + p.w && p.y < b.y2 && b.y1 < p.y + p.h) n += 1;
+    }
+  }
+  return n;
+})();
+check('禁止覆盖：碰撞检测后整体展开，所有节点框不再重叠',
+  app.state.viewState?.allowOverlap === false && bGapNo === 52 && overlaps === 0 && frameOverlaps === 0 &&
+  app.state.positions.get('V-B1').x > Math.max(...['V-A1', 'V-A2', 'V-A3'].map((id) => app.state.positions.get(id).x + app.state.positions.get(id).w)),
+  `gap=${bGapNo} nodeOverlaps=${overlaps} frameOverlaps=${frameOverlaps}`);
+
+const savedLayer = await app.saveViewLayer('紧凑方案');
+check('保存当前视图为图层（紧凑、禁止覆盖）',
+  savedLayer.ok && app.state.viewLayerId && !app.state.viewDirty && app.state.viewLayers.length === 1 &&
+  (app.state.viewLayers[0].modes || []).includes('compact') &&
+  !(app.state.viewLayers[0].modes || []).includes('stack'),
+  `layer=${app.state.viewLayerId} modes=${app.state.viewLayers[0]?.modes}`);
+
+app.toggleAllowOverlap();
+check('允许覆盖：卡片重新压住', app.state.viewState?.allowOverlap === true &&
+  app.state.positions.get('V-B2').y - app.state.positions.get('V-B1').y === 26);
+const updatedFirst = await app.saveViewLayer('紧凑方案');
+check('同名保存＝覆盖当前快照，不新增图层',
+  updatedFirst.ok && app.state.viewLayers.length === 1 &&
+  (app.state.viewLayers[0].modes || []).includes('stack'),
+  `layers=${app.state.viewLayers.length} modes=${(app.state.viewLayers[0]?.modes || []).join('+')}`);
+
+app.toggleGroupView();
+const savedSecond = await app.saveViewLayer('组视角方案');
+check('改名保存＝另起一个图层，已有图层不被覆盖',
+  savedSecond.ok && app.state.viewLayers.length === 2 &&
+  app.state.viewLayers.some((l) => l.name === '紧凑方案' && (l.modes || []).includes('stack')) &&
+  app.state.viewLayers.some((l) => l.name === '组视角方案' && (l.modes || []).includes('group-view') && !(l.modes || []).includes('stack')),
+  `layers=${app.state.viewLayers.map((l) => l.name + ':' + (l.modes || []).join('+')).join(',')}`);
+
+await app.switchViewLayer(null);
+check('切回原视图：坐标回到库里那张图', app.state.viewState === null && app.state.positions.get('V-A1').x === 100,
+  `x=${app.state.positions.get('V-A1').x}`);
+
+const compactId = app.state.viewLayers.find((l) => l.name === '紧凑方案').id;
+const groupId = app.state.viewLayers.find((l) => l.name === '组视角方案').id;
+await app.switchViewLayer(compactId);
+check('切回紧凑图层：紧凑+允许覆盖都恢复',
+  app.viewCompactView() === true && app.state.viewState?.allowOverlap === true && !app.viewGroupView());
+await app.switchViewLayer(groupId);
+check('切到第二个图层：组视角恢复',
+  app.viewGroupView() === true && !app.viewCompactView() && app.state.viewState?.allowOverlap === false);
+
+const renamed = await app.saveViewLayer('组视角方案B', { renameOnly: true });
+check('改名只改当前图层名字，不新增也不改快照',
+  renamed.ok && app.state.viewLayers.length === 2 &&
+  app.state.viewLayers.find((l) => l.id === groupId)?.name === '组视角方案B' &&
+  (app.state.viewLayers.find((l) => l.id === groupId)?.modes || []).includes('group-view'),
+  `layers=${app.state.viewLayers.map((l) => l.name).join(',')}`);
+
+const dupLayer = await app.saveViewLayer('紧凑方案');
+check('重名另存被拒绝（不覆盖已有图层）',
+  !dupLayer.ok && app.state.viewLayers.length === 2 && /已存在/.test(el('toast').innerHTML),
+  el('toast').innerHTML.slice(0, 80));
+
+app.toggleCompactView();
+app.state.viewPromptChoice = 'discard';
+await app.switchViewLayer(null);
+check('切图层时未保存改动可选择丢弃', app.state.viewState === null && !app.state.viewPromptChoice);
+
+const layerIds = app.state.viewLayers.map((l) => l.id);
+for (const id of layerIds) await app.deleteViewLayerById(id);
+check('删除图层不影响原视图', app.state.viewState === null && app.state.viewLayers.length === 0);
+
+app.state.viewport = { scale: 0.5, tx: 0, ty: 0 };
+app.render();
+check('视角拉远后每个组只显示组名称',
+  /lod-group/.test(el('graph').innerHTML) && /coord-axes/.test(el('graph').innerHTML) && !/data-node=/.test(el('graph').innerHTML),
+  `lod=${/lod-group/.test(el('graph').innerHTML)}`);
+const lodZoom = app.zoomToGroup(gidA);
+check('远视角双击组名仍能进入组并操作节点',
+  lodZoom && lodZoom.scale > 0.55 && /data-node=/.test(el('graph').innerHTML),
+  `scale=${lodZoom?.scale?.toFixed(2)}`);
+app.state.viewport = { scale: 1, tx: 0, ty: 0 };
+app.render();
+
+app.toggleCompactView();
+app.state.viewport = { scale: 0.4, tx: 0, ty: 0 };
+app.render();
+check('紧凑视图缩小时仍显示小卡，不被组名 LOD 吃掉',
+  !/lod-group/.test(el('graph').innerHTML) && /data-node=/.test(el('graph').innerHTML),
+  `lod=${/lod-group/.test(el('graph').innerHTML)}`);
+app.toggleCompactView();
+app.state.viewport = { scale: 1, tx: 0, ty: 0 };
+app.render();
+
+const bundle = app.exportBundle();
+check('导出 JSON：工作流 + 当前视图一起打包',
+  bundle?.format === 'workproto.bundle' && bundle.nodes?.length === 5 && bundle.edges?.length === 5 &&
+  bundle.nodeGroups?.length === 2 && bundle.view?.payload?.positions &&
+  Object.keys(bundle.view.payload.positions).length === 5,
+  `nodes=${bundle?.nodes?.length} groups=${bundle?.nodeGroups?.length}`);
+const imported = await app.importBundleData(bundle);
+check('导入 JSON：同时重建工作流和视图（ID 已重映射）',
+  imported.ok && app.state.graph.nodes.length === 5 && app.state.graph.nodeGroups.length === 2 &&
+  app.state.viewLayers.length === 1 && app.state.viewState &&
+  Object.keys(app.state.viewState.positions).length === 5 && !app.state.viewState.positions['V-A1'],
+  `task=${app.state.taskId} layers=${app.state.viewLayers.length}`);
+
+app.resetViewState();
+app.state.taskId = 't-ui';
+await app.refresh();
+
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n总计 ${results.length} 项：通过 ${results.length - failed.length}，失败 ${failed.length}`);
