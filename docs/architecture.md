@@ -8,7 +8,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 页面 | `http://127.0.0.1:5081/`（`run-proto.cmd` 起） |
+| 页面 | `http://127.0.0.1:5081/`（根目录 `启动点.bat` 起；也可 `dotnet <dll>` 直接起） |
 | 环境变量 | `PROTO_PORT`（端口）、`PROTO_DB`（库路径）、`PROTO_AGENT`（默认操作者名）、`PROTO_SYNC`（`NORMAL`/`FULL`，见第五节） |
 | 库 | `data\proto.db`（可删，删了重启即空库；`verify` 脚本各自用临时库） |
 | 构建 | `dotnet build backend\WorkProto.Api\WorkProto.Api.csproj`（net10.0 + Microsoft.Data.Sqlite） |
